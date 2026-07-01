@@ -1,0 +1,152 @@
+# =============================================================
+#  Weather Data Project — Master Configuration
+#  Location: Mandi District, Himachal Pradesh
+#  Stage: 1 — Dataset Collection
+# =============================================================
+location:
+  state:         "Himachal Pradesh"
+  state_code:    "HP"
+  district:      "Mandi"
+  district_code: "MANDI"
+  latitude:      31.7081
+  longitude:     76.9318
+  bounding_box:
+    lat_min: 31.35
+    lat_max: 32.10
+    lon_min: 76.50
+    lon_max: 77.50
+dates:
+  start_date: "2022-01-01"
+  end_date:   "2024-09-30"
+# =============================================================
+#  API KEYS — fill in your values here
+# =============================================================
+api_keys:
+  datagov:         "ENTER_YOUR_DATA_GOV_IN_API_KEY_HERE"  # data.gov.in
+  nasa_earthdata: "ENTER_YOUR_NASA_EARTHDATA_API_KEY_HERE"
+  nasa_username:  "ENTER_YOUR_NASA_EARTHDATA_USERNAME_HERE"
+  nasa_password:  "ENTER_YOUR_NASA_EARTHDATA_PASSWORD_HERE"
+  cds_api_key:    "ENTER_YOUR_COPERNICUS_CDS_API_KEY_HERE"
+# =============================================================
+#  HTTP / RETRY SETTINGS
+# =============================================================
+http:
+  timeout_seconds:  120
+  max_retries:        5
+  backoff_factor:     2.0
+  retry_on_status: [429, 500, 502, 503, 504]
+
+# =============================================================
+#  SOURCES
+# =============================================================
+sources:
+
+  imd:
+    name:             "IMD Gridded Rainfall (IMDLIB / IMD Pune)"
+    portal_url:       "https://cdsp.imdpune.gov.in"
+    download_dir:     "datasets/source_1_imd"
+    resolution_deg:   0.25
+    variables:
+      - "rain"
+    update_frequency: "Daily"
+    enabled:          true
+
+  nasa_gpm:
+    name:             "NASA GPM IMERG Late Precipitation Half-Hourly (3IMERGHHL V07)"
+    download_dir:     "datasets/source_2_nasa_gpm"
+    update_frequency: "Half-Hourly"
+    enabled:          true
+    product:          "GPM_3IMERGHHL"
+    version:          "07"
+    run_type:         "Late"
+    earthdata_base:   "https://gpm1.gesdisc.eosdis.nasa.gov/data/GPM_L3/GPM_3IMERGHHL.07"
+    cmr_concept_id:   "C2723754845-GES_DISC"
+    cmr_short_name:   "GPM_3IMERGHHL"
+    cmr_version:      "07"
+    cmr_provider:     "GES_DISC"
+    cmr_page_size:    100
+    files_per_day:    48
+    fill_value:       -9999.9
+    hdf5_paths:
+      time:                      "Grid/time"
+      lat:                       "Grid/lat"
+      lon:                       "Grid/lon"
+      precipitation:             "Grid/precipitation"
+      precipitationQualityIndex: "Grid/precipitationQualityIndex"
+
+  datagov:
+    name:             "data.gov.in — Daily District Rainfall NRSC VIC MODEL"
+    base_url:         "https://api.data.gov.in/resource"
+    download_dir:     "datasets/source_3_datagov"
+    resource_id:      "6c05cd1b-ed59-40c2-bc31-e314f39c6971"
+    api_filters:
+      State:        "Himachal Pradesh"
+      Agency_name:  "NRSC VIC MODEL"
+    district_filter_field: "District"
+    district_filter_value: "Mandi"
+    year_filter_field:     "Year"
+    known_columns:
+      date:     ["Date", "date", "DATE", "Rainfall_Date"]
+      district: ["District", "district", "DISTRICT"]
+      state:    ["State", "state", "STATE"]
+      rainfall: ["Rainfall", "rainfall", "RF", "rain_mm", "Daily_Rainfall"]
+      agency:   ["Agency_name", "Agency", "agency"]
+      year:     ["Year", "year", "YEAR"]
+    page_size:        1000
+    update_frequency: "Daily"
+    enabled:          true
+
+  era5:
+    name:             "ERA5 Reanalysis — Copernicus Climate Data Store"
+    download_dir:     "datasets/source_4_era5"
+    dataset:          "reanalysis-era5-single-levels"
+    product_type:     "reanalysis"
+    data_format:      "netcdf"
+    variables:
+      - "10m_u_component_of_wind"
+      - "10m_v_component_of_wind"
+      - "2m_dewpoint_temperature"
+      - "2m_temperature"
+      - "mean_sea_level_pressure"
+      - "surface_pressure"
+      - "total_precipitation"
+      - "total_cloud_cover"
+      - "convective_precipitation"
+      - "convective_available_potential_energy"
+    update_frequency: "Hourly (ERA5 reanalysis)"
+    enabled:          true
+
+  openmeteo:
+    name:             "Open-Meteo ERA5 Reanalysis Archive (Supplementary)"
+    base_url:         "https://archive-api.open-meteo.com/v1/archive"
+    forecast_url:     "https://api.open-meteo.com/v1/forecast"
+    download_dir:     "datasets/source_5_openmeteo"
+    variables:
+      hourly:
+        - "precipitation"
+        - "rain"
+        - "snowfall"
+        - "temperature_2m"
+        - "relative_humidity_2m"
+        - "wind_speed_10m"
+        - "wind_gusts_10m"
+        - "wind_direction_10m"
+        - "surface_pressure"
+        - "cloud_cover"
+        - "weather_code"
+    timezone:              "Asia/Kolkata"
+    wind_speed_unit:       "kmh"
+    precipitation_unit:    "mm"
+    update_frequency:      "Hourly (ERA5 reanalysis)"
+    enabled:               true
+
+# =============================================================
+#  LOGGING
+# =============================================================
+logging:
+  level:               "INFO"
+  format:              "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
+  date_format:         "%Y-%m-%d %H:%M:%S"
+  global_log_dir:      "logs"
+  rotate_max_bytes:    10485760
+  rotate_backup_count: 5
