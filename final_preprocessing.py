@@ -14,17 +14,44 @@ Fixes in this version
   FIX 5: train.dtypes[c] used instead of train[c].dtype (safe with any df)
   FIX 6: output named final_preprocessed.csv
 
+NEW in this version
+--------------------
+  STEP 16: Class weighting        -- balanced weights for rain_intensity_class,
+                                      data-driven scale_pos_weight for
+                                      cloudburst_flag / landslide_risk
+                                      (computed from real counts, not hardcoded)
+  STEP 17: Weighted temporal CV   -- blocked/expanding-window CV folds
+                                      (never shuffled -- this is a time series),
+                                      with per-fold class-weight table since the
+                                      positive rate drifts across the year
+  STEP 18: Time-block undersampling -- fixes rare-event imbalance for
+                                      cloudburst_flag / landslide_risk by
+                                      dropping whole negative-only time blocks
+                                      (never individual rows, which would break
+                                      rolling/lag features)
+  STEP 19: Hyperparameter recommendations -- data-driven search spaces +
+                                      scale_pos_weight values saved to JSON
+
 Output files (in ml_ready/)
 ----------------------------
-    final_preprocessed.csv      full clean dataset (36 cols)
-    X_train.csv                 13,104 rows x 35 features
-    X_val.csv                    4,416 rows x 35 features
-    X_test.csv                   6,553 rows x 35 features
-    y_train.csv                 13,104 rows x 4 targets
-    y_val.csv                    4,416 rows x 4 targets
-    y_test.csv                   6,553 rows x 4 targets
-    scaler_params.csv           mean / std per scaled feature
-    split_report.txt            full summary
+    final_preprocessed.csv          full clean dataset (36 cols)
+    X_train.csv / X_val.csv / X_test.csv
+    y_train.csv / y_val.csv / y_test.csv
+    scaler_params.csv               mean / std per scaled feature
+    sample_weights_train.csv        per-row weights for all 3 classification tasks
+    class_weights.json              balanced class weights + scale_pos_weight
+    temporal_cv_folds.csv           row_index -> fold (blocked, expanding window)
+    temporal_cv_fold_weights.csv    per-fold pos counts + scale_pos_weight
+    X_train_cloudburst_flag_balanced.csv / y_train_cloudburst_flag_balanced.csv
+    X_train_landslide_risk_balanced.csv  / y_train_landslide_risk_balanced.csv
+    hyperparam_recommendations.json search spaces per task
+    train_ready_master.csv          *** SINGLE FILE FOR TRAINING ***
+                                     X_train + y_train + all 3 sample-weight
+                                     cols + cv_fold, one row per hour.
+                                     Use for Task 1 & 2. For Task 3/4 use the
+                                     *_balanced.csv pair instead (different
+                                     row count by design -- see Step 20 docstring)
+    split_report.txt                full summary
 
 Usage
 -----
@@ -36,12 +63,15 @@ Usage
 from __future__ import annotations
 
 import argparse
+import json
 import warnings
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
+from sklearn.utils.class_weight import compute_class_weight
 
 warnings.filterwarnings("ignore")
 
@@ -55,6 +85,21 @@ DEFAULT_OUTPUT = Path("ml_ready")
 TRAIN_END     = "2023-06-30 23:00:00"
 VAL_END       = "2023-12-31 23:00:00"
 CLOUDBURST_MM = 100.0
+
+CV_N_SPLITS               = 5      # temporal CV folds
+UNDERSAMPLE_BLOCK_HOURS   = 24     # size of a time block for undersampling
+UNDERSAMPLE_TARGET_RATIO  = 10     # neg:pos ratio to aim for after undersampling
+RANDOM_STATE              = 42
+
+# Features that overlap with how cloudburst_flag / landslide_risk are DEFINED
+# (cloudburst_flag = rolling_precip_3h >= 100mm), so rolling_precip_24h/72h
+# contain that exact 3h window inside their own sum -- a validation report
+# flagged these with AUC 0.90-0.99 predicting the rare-event targets alone.
+# That's not future leakage (all past/current data), but it IS circular:
+# the model would mostly be re-detecting a component of its own label.
+# Dropped ONLY from the rare-event balanced sets below -- kept for Task 1/2,
+# where they are legitimate predictors of continuous rainfall / intensity.
+RARE_EVENT_DROP_COLS = ["rolling_precip_24h", "rolling_precip_72h"]
 
 # Columns confirmed bad by EDA
 DROP_COLS = [
@@ -599,6 +644,356 @@ def validate(
 
 
 # ==============================================================================
+#  STEP 16 -- CLASS WEIGHTS & SAMPLE WEIGHTS  (data-driven, not hardcoded)
+# ==============================================================================
+
+def compute_weights(y_train: pd.DataFrame, output_dir: Path) -> dict:
+    """
+    - rain_intensity_class (multiclass, 0-5): sklearn 'balanced' class weights
+      -> a per-row sample_weight column, since XGBClassifier's multiclass mode
+      has no native class_weight argument (only binary scale_pos_weight does).
+    - cloudburst_flag / landslide_risk (binary, rare-event): scale_pos_weight
+      = neg/pos, computed from the ACTUAL train counts (the old script had
+      these hardcoded as 200 / 151 -- guesses that go stale the moment the
+      dataset changes).
+
+    Saves sample_weights_train.csv (row-aligned with X_train/y_train) and
+    class_weights.json (for reference / for the tuning script).
+    """
+    _header("STEP 16 -- Class Weights & Sample Weights")
+
+    weights_summary: dict = {}
+
+    # ---- Multiclass: rain_intensity_class ----
+    classes = np.sort(y_train["rain_intensity_class"].unique())
+    cw = compute_class_weight("balanced", classes=classes, y=y_train["rain_intensity_class"])
+    class_weight_map = {int(c): float(w) for c, w in zip(classes, cw)}
+    weights_summary["rain_intensity_class"] = {"class_weight": class_weight_map}
+    sw_intensity = y_train["rain_intensity_class"].map(class_weight_map).values
+    print(f"  rain_intensity_class class_weight: {class_weight_map}")
+
+    sample_weights = pd.DataFrame({"sw_rain_intensity_class": sw_intensity})
+
+    # ---- Binary rare-event tasks ----
+    for col in ["cloudburst_flag", "landslide_risk"]:
+        pos = int(y_train[col].sum())
+        neg = int(len(y_train) - pos)
+        spw = round(neg / max(pos, 1), 3)
+        weights_summary[col] = {
+            "scale_pos_weight": spw, "pos": pos, "neg": neg,
+            "pos_pct": round(pos / len(y_train) * 100, 4),
+        }
+        sample_weights[f"sw_{col}"] = np.where(y_train[col] == 1, spw, 1.0)
+        print(f"  {col:<18}: pos={pos:,}  neg={neg:,}  scale_pos_weight={spw}"
+              f"  ({pos/len(y_train)*100:.3f}% positive)")
+
+    sample_weights.to_csv(output_dir / "sample_weights_train.csv", index=False)
+    with open(output_dir / "class_weights.json", "w") as f:
+        json.dump(weights_summary, f, indent=2)
+
+    print(f"  Saved: sample_weights_train.csv (row-aligned with X_train/y_train)")
+    print(f"  Saved: class_weights.json")
+    return weights_summary
+
+
+# ==============================================================================
+#  STEP 17 -- WEIGHTED TEMPORAL CROSS-VALIDATION FOLDS
+# ==============================================================================
+
+def make_temporal_cv_folds(
+    dates_train: pd.Series,
+    y_train: pd.DataFrame,
+    output_dir: Path,
+    n_splits: int = CV_N_SPLITS,
+) -> pd.DataFrame:
+    """
+    Blocked / expanding-window CV -- NEVER shuffled, because this is a time
+    series. Fold i trains on everything chronologically BEFORE its validation
+    block and validates on the block right after it (sklearn's TimeSeriesSplit).
+    Plain KFold or a random shuffle-split would leak future rows into past
+    training folds and give badly over-optimistic CV scores.
+
+    It is 'weighted' because each fold also gets its own scale_pos_weight
+    for cloudburst_flag/landslide_risk: the positive rate for these rare
+    events drifts across the year (monsoon-heavy folds vs winter-heavy
+    folds), so a single global weight would under- or over-correct
+    depending which fold you're on. Use temporal_cv_fold_weights.csv during
+    hyperparameter search to re-weight scale_pos_weight per fold.
+    """
+    _header("STEP 17 -- Weighted Temporal Cross-Validation Folds")
+
+    n = len(dates_train)
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+
+    fold_assignment = np.full(n, -1, dtype=int)
+    fold_report = []
+
+    for fold_id, (tr_idx, va_idx) in enumerate(tscv.split(np.arange(n))):
+        fold_assignment[va_idx] = fold_id
+
+        tr_start, tr_end = dates_train.iloc[tr_idx[0]], dates_train.iloc[tr_idx[-1]]
+        va_start, va_end = dates_train.iloc[va_idx[0]], dates_train.iloc[va_idx[-1]]
+
+        row = {
+            "fold": fold_id,
+            "train_rows": len(tr_idx), "val_rows": len(va_idx),
+            "train_start": str(tr_start), "train_end": str(tr_end),
+            "val_start": str(va_start), "val_end": str(va_end),
+        }
+
+        for col in ["cloudburst_flag", "landslide_risk"]:
+            pos = int(y_train[col].iloc[va_idx].sum())
+            neg = len(va_idx) - pos
+            row[f"{col}_val_pos"] = pos
+            row[f"{col}_val_scale_pos_weight"] = round(neg / max(pos, 1), 3)
+
+        fold_report.append(row)
+        print(f"  Fold {fold_id}: train={len(tr_idx):>6,} rows [{tr_start.date()} -> {tr_end.date()}]"
+              f"  val={len(va_idx):>6,} rows [{va_start.date()} -> {va_end.date()}]")
+
+    cv_df = pd.DataFrame({"row_index": np.arange(n), "fold": fold_assignment})
+    cv_df.to_csv(output_dir / "temporal_cv_folds.csv", index=False)
+
+    fold_report_df = pd.DataFrame(fold_report)
+    fold_report_df.to_csv(output_dir / "temporal_cv_fold_weights.csv", index=False)
+
+    n_unused = int((fold_assignment == -1).sum())
+    print(f"  Rows before fold 0's validation window (fold=-1, used only as training context): {n_unused:,}")
+    print(f"  Saved: temporal_cv_folds.csv, temporal_cv_fold_weights.csv")
+    return fold_report_df
+
+
+# ==============================================================================
+#  STEP 18 -- TIME-BLOCK UNDERSAMPLING (rare-event tasks)
+# ==============================================================================
+
+def time_block_undersample(
+    X_train: pd.DataFrame,
+    y_train: pd.DataFrame,
+    dates_train: pd.Series,
+    target_col: str,
+    output_dir: Path,
+    block_hours: int = UNDERSAMPLE_BLOCK_HOURS,
+    target_ratio: float = UNDERSAMPLE_TARGET_RATIO,
+    random_state: int = RANDOM_STATE,
+) -> None:
+    """
+    Random row-level undersampling would rip individual hours out of the
+    sequence, which destroys the meaning of rolling/lag features for their
+    neighbours. Instead this undersamples by whole CONTIGUOUS time blocks:
+
+      1. Bucket every row into a block of `block_hours` hours.
+      2. Any block containing >= 1 positive event is always kept whole
+         (full context around every real event is preserved).
+      3. Blocks with zero positives ('negative-only') are randomly dropped
+         WHOLE until the remaining neg:pos ratio reaches `target_ratio`.
+
+    Output is a separate, smaller, class-balanced training set -- use it
+    for the rare-event tasks (cloudburst_flag, landslide_risk) instead of
+    the full X_train/y_train, on top of scale_pos_weight.
+
+    Also drops RARE_EVENT_DROP_COLS (rolling_precip_24h/72h) here ONLY --
+    these wide rolling windows contain the exact same hours used to define
+    cloudburst_flag (rolling_precip_3h >= 100mm), so keeping them would let
+    the model mostly re-detect a component of its own label rather than
+    learn genuine precursor signals. Task 1/2 datasets keep these columns,
+    since they're legitimate predictors there.
+    """
+    block_id = ((dates_train - dates_train.min()) / pd.Timedelta(hours=block_hours)).astype(int)
+
+    pos_mask = y_train[target_col] == 1
+    pos_blocks = set(block_id[pos_mask].unique())
+    keep_mask = block_id.isin(pos_blocks).values  # always keep event blocks
+
+    neg_only_blocks = sorted(set(block_id.unique()) - pos_blocks)
+    n_pos = int(pos_mask.sum())
+    target_neg = int(n_pos * target_ratio)
+
+    rng = np.random.default_rng(random_state)
+    rng.shuffle(neg_only_blocks)
+
+    kept_neg_rows = 0
+    chosen_neg_blocks = set()
+    for b in neg_only_blocks:
+        if kept_neg_rows >= target_neg:
+            break
+        chosen_neg_blocks.add(b)
+        kept_neg_rows += int((block_id == b).sum())
+
+    final_mask = keep_mask | block_id.isin(chosen_neg_blocks).values
+
+    X_bal = X_train.loc[final_mask].reset_index(drop=True)
+    y_bal = y_train.loc[final_mask].reset_index(drop=True)
+
+    drop_now = [c for c in RARE_EVENT_DROP_COLS if c in X_bal.columns]
+    if drop_now:
+        X_bal = X_bal.drop(columns=drop_now)
+        print(f"    Dropped (label-overlap risk): {drop_now}")
+
+    n_pos_final = int(y_bal[target_col].sum())
+    n_neg_final = len(y_bal) - n_pos_final
+    spw_final = round(n_neg_final / max(n_pos_final, 1), 3)
+
+    X_bal.to_csv(output_dir / f"X_train_{target_col}_balanced.csv", index=False)
+    y_bal.to_csv(output_dir / f"y_train_{target_col}_balanced.csv", index=False)
+
+    print(f"  {target_col:<18}: {len(X_train):,} -> {len(X_bal):,} rows "
+          f"(pos={n_pos_final:,}, neg={n_neg_final:,}, neg:pos = {spw_final}:1, "
+          f"{X_bal.shape[1]} features)")
+    print(f"    Saved: X_train_{target_col}_balanced.csv, y_train_{target_col}_balanced.csv")
+
+
+def run_time_block_undersampling(
+    X_train: pd.DataFrame,
+    y_train: pd.DataFrame,
+    dates_train: pd.Series,
+    output_dir: Path,
+) -> None:
+    _header("STEP 18 -- Time-Block Undersampling (cloudburst_flag, landslide_risk)")
+    for col in ["cloudburst_flag", "landslide_risk"]:
+        if col in y_train.columns:
+            time_block_undersample(X_train, y_train, dates_train, col, output_dir)
+
+
+# ==============================================================================
+#  STEP 19 -- HYPERPARAMETER RECOMMENDATIONS  (data-driven, not hardcoded)
+# ==============================================================================
+
+def save_hyperparam_recommendations(weights_summary: dict, output_dir: Path) -> None:
+    _header("STEP 19 -- Hyperparameter Recommendations")
+
+    # Derive num_class from the ACTUAL classes seen in train, not a hardcoded 6.
+    # If a rare class (e.g. class 5 "Extreme") never occurs in train, XGBoost
+    # must still be told the true number of classes or label alignment breaks.
+    observed_classes = sorted(int(c) for c in weights_summary["rain_intensity_class"]["class_weight"].keys())
+    num_class = max(observed_classes) + 1  # classes are 0-indexed (0..5)
+    if len(observed_classes) != num_class:
+        print(f"  WARNING: classes observed in train = {observed_classes} "
+              f"-- some intensity classes never occurred in this train split.")
+    print(f"  num_class (derived from data) = {num_class}")
+
+    recs = {
+        "task1_regression_imd_rainfall_mm": {
+            "model": "XGBRegressor",
+            "search_space": {
+                "n_estimators": [300, 500, 800, 1200],
+                "max_depth": [3, 4, 5, 6, 8],
+                "learning_rate": [0.01, 0.03, 0.05, 0.1],
+                "subsample": [0.6, 0.8, 1.0],
+                "colsample_bytree": [0.6, 0.8, 1.0],
+                "min_child_weight": [1, 3, 5, 7],
+                "reg_alpha": [0, 0.1, 1.0],
+                "reg_lambda": [1.0, 2.0, 5.0],
+            },
+            "metric": "RMSE / MAE / R2",
+            "cv": "temporal_cv_folds.csv (blocked, expanding window)",
+        },
+        "task2_classification_rain_intensity_class": {
+            "model": "XGBClassifier",
+            "objective": "multi:softprob",
+            "num_class": num_class,
+            "sample_weight": "sample_weights_train.csv -> sw_rain_intensity_class",
+            "class_weight": weights_summary["rain_intensity_class"]["class_weight"],
+            "search_space": {
+                "n_estimators": [300, 500, 800],
+                "max_depth": [4, 5, 6, 8],
+                "learning_rate": [0.01, 0.03, 0.05, 0.1],
+                "subsample": [0.6, 0.8, 1.0],
+                "colsample_bytree": [0.6, 0.8, 1.0],
+            },
+            "metric": "F1-macro",
+            "cv": "temporal_cv_folds.csv",
+        },
+        "task3_cloudburst_flag": {
+            "model": "XGBClassifier",
+            "objective": "binary:logistic",
+            "scale_pos_weight_full_train": weights_summary["cloudburst_flag"]["scale_pos_weight"],
+            "balanced_dataset": "X_train_cloudburst_flag_balanced.csv / y_train_cloudburst_flag_balanced.csv",
+            "note": "Train on the time-block-balanced set with a SMALLER scale_pos_weight "
+                    "(re-derived from the balanced set's own pos/neg counts, printed in the "
+                    "Step 18 log) rather than the raw full-train value above.",
+            "search_space": {
+                "n_estimators": [300, 500, 800],
+                "max_depth": [3, 4, 5, 6],
+                "learning_rate": [0.01, 0.03, 0.05, 0.1],
+                "subsample": [0.6, 0.8, 1.0],
+                "min_child_weight": [1, 3, 5],
+            },
+            "metric": "F1 / AUC-PR (never accuracy on a rare-event task)",
+            "cv": "temporal_cv_folds.csv (use temporal_cv_fold_weights.csv for per-fold scale_pos_weight)",
+        },
+        "task4_landslide_risk": {
+            "model": "XGBClassifier",
+            "objective": "binary:logistic",
+            "scale_pos_weight_full_train": weights_summary["landslide_risk"]["scale_pos_weight"],
+            "balanced_dataset": "X_train_landslide_risk_balanced.csv / y_train_landslide_risk_balanced.csv",
+            "search_space": {
+                "n_estimators": [300, 500, 800],
+                "max_depth": [3, 4, 5, 6],
+                "learning_rate": [0.01, 0.03, 0.05, 0.1],
+                "subsample": [0.6, 0.8, 1.0],
+                "min_child_weight": [1, 3, 5],
+            },
+            "metric": "F1 / AUC-PR (never accuracy on a rare-event task)",
+            "cv": "temporal_cv_folds.csv",
+        },
+    }
+
+    with open(output_dir / "hyperparam_recommendations.json", "w") as f:
+        json.dump(recs, f, indent=2)
+    print("  Saved: hyperparam_recommendations.json")
+
+
+# ==============================================================================
+#  STEP 20 -- SINGLE MERGED TRAINING FILE
+#  (X_train + y_train + sample weights + temporal CV fold, one row per hour)
+# ==============================================================================
+
+def build_master_training_file(
+    X_train: pd.DataFrame,
+    y_train: pd.DataFrame,
+    dates_train: pd.Series,
+    output_dir: Path,
+) -> pd.DataFrame:
+    """
+    One CSV with everything needed to train Tasks 1 & 2 (regression +
+    intensity classification) in a single read:
+      datetime | <35 features> | <4 targets> | sw_rain_intensity_class |
+      sw_cloudburst_flag | sw_landslide_risk | cv_fold
+
+    This does NOT include the time-block-undersampled rows for Tasks 3/4
+    (cloudburst_flag, landslide_risk) -- those are a different, shorter set
+    of rows by design (whole negative blocks removed) and can't share a row
+    count with the full X_train, so they stay in their own
+    X_train_<target>_balanced.csv / y_train_<target>_balanced.csv files.
+    For Tasks 3/4, load those two files instead of this one.
+    """
+    _header("STEP 20 -- Build Single Merged Training File")
+
+    sw = pd.read_csv(output_dir / "sample_weights_train.csv")
+    cv = pd.read_csv(output_dir / "temporal_cv_folds.csv")
+
+    master = pd.concat(
+        [dates_train.reset_index(drop=True).rename("datetime"),
+         X_train.reset_index(drop=True),
+         y_train.reset_index(drop=True),
+         sw.reset_index(drop=True),
+         cv["fold"].rename("cv_fold").reset_index(drop=True)],
+        axis=1,
+    )
+
+    out_path = output_dir / "train_ready_master.csv"
+    master.to_csv(out_path, index=False)
+    sz = out_path.stat().st_size / 1e6
+    print(f"  train_ready_master.csv  {len(master):,} rows x {master.shape[1]} cols  ({sz:.1f} MB)")
+    print(f"  Columns: datetime | {X_train.shape[1]} features | {y_train.shape[1]} targets | "
+          f"3 sample-weight cols | cv_fold")
+    print(f"  Use this ONE file for Task 1 (regression) and Task 2 (intensity class).")
+    print(f"  For Task 3/4 (cloudburst_flag, landslide_risk), use the *_balanced.csv files instead.")
+    return master
+
+
+# ==============================================================================
 #  STEP 15 -- SAVE (CSV only -- no parquet dependency)
 # ==============================================================================
 
@@ -615,7 +1010,7 @@ def save_all(
     test:      pd.DataFrame,
     output_dir: Path,
 ) -> None:
-    _header("STEP 15 -- Save All Outputs (CSV only)")
+    _header("STEP 15 -- Save Core Outputs (CSV only)")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Main dataset
@@ -684,6 +1079,27 @@ def _build_report(
         L.append(f"  {i:>3}. {col}{tag}")
 
     L.append(f"\n{'-'*65}")
+    L.append("  IMBALANCE HANDLING (new)")
+    L.append(f"{'-'*65}")
+    L.append("""
+  1. Class weighting        -- class_weights.json + sample_weights_train.csv
+                                (balanced weights for rain_intensity_class,
+                                data-driven scale_pos_weight for the two
+                                binary rare-event tasks)
+  2. Weighted temporal CV   -- temporal_cv_folds.csv (blocked, expanding
+                                window, never shuffled) + per-fold
+                                scale_pos_weight in temporal_cv_fold_weights.csv
+  3. Time-block undersampling -- X_train_<target>_balanced.csv /
+                                y_train_<target>_balanced.csv for
+                                cloudburst_flag and landslide_risk (whole
+                                negative-only time blocks dropped, event
+                                blocks always kept intact)
+  4. hyperparam_recommendations.json -- data-driven search spaces + weights
+                                for all 4 tasks, ready for RandomizedSearchCV
+                                / Optuna using the temporal CV folds above
+""")
+
+    L.append(f"{'-'*65}")
     L.append("  HOW TO USE IN TRAINING")
     L.append(f"{'-'*65}")
     L.append("""
@@ -694,26 +1110,34 @@ def _build_report(
   y_train = pd.read_csv("ml_ready/y_train.csv")
   y_val   = pd.read_csv("ml_ready/y_val.csv")
   y_test  = pd.read_csv("ml_ready/y_test.csv")
+  sw      = pd.read_csv("ml_ready/sample_weights_train.csv")
 
   Task 1 -- Regression
     y = y_train["imd_rainfall_mm"]
     XGBRegressor()  |  metrics: MAE, RMSE, R2
+    tune with temporal_cv_folds.csv (see train_xgboost_tuned.py)
 
   Task 2 -- Intensity Classification (0-5)
     y = y_train["rain_intensity_class"]
-    XGBClassifier(use_label_encoder=False, eval_metric="mlogloss")
-    + scale_pos_weight per class  |  metric: F1-macro
+    XGBClassifier(objective="multi:softprob", num_class=6)
+    .fit(X_train, y, sample_weight=sw["sw_rain_intensity_class"])
+    metric: F1-macro
 
-  Task 3 -- Cloudburst Detection (0.5% positive)
-    y = y_train["cloudburst_flag"]
-    XGBClassifier(scale_pos_weight=200)  |  metric: F1, AUC-PR
+  Task 3 -- Cloudburst Detection (rare event)
+    X = pd.read_csv("ml_ready/X_train_cloudburst_flag_balanced.csv")
+    y = pd.read_csv("ml_ready/y_train_cloudburst_flag_balanced.csv")["cloudburst_flag"]
+    XGBClassifier(scale_pos_weight=<see class_weights.json, recomputed on
+                  the BALANCED set -- printed in Step 18 log>)
+    metric: F1, AUC-PR
 
-  Task 4 -- Landslide Risk (0.66% positive)
-    y = y_train["landslide_risk"]
-    XGBClassifier(scale_pos_weight=151)  |  metric: F1, AUC-PR
+  Task 4 -- Landslide Risk (rare event)
+    same pattern as Task 3, with *_landslide_risk_balanced.csv
 
   DO NOT use accuracy for Tasks 3 & 4 -- imbalanced datasets.
   Use: F1, Precision-Recall AUC, ROC-AUC
+
+  See train_xgboost_tuned.py for a full RandomizedSearchCV example wired
+  up to temporal_cv_folds.csv + sample_weights_train.csv.
 """)
     L.append("=" * 65)
     L.append("  END")
@@ -779,6 +1203,14 @@ def main() -> None:
              y_train, y_val, y_test,
              train, val, test, output_dir)
 
+    # ---- Imbalance handling & tuning prep (new) ----
+    weights_summary = compute_weights(y_train, output_dir)                 # Step 16
+    dates_train = train_sc["datetime"].reset_index(drop=True)
+    make_temporal_cv_folds(dates_train, y_train, output_dir)               # Step 17
+    run_time_block_undersampling(X_train, y_train, dates_train, output_dir)  # Step 18
+    save_hyperparam_recommendations(weights_summary, output_dir)           # Step 19
+    build_master_training_file(X_train, y_train, dates_train, output_dir)  # Step 20
+
     # ---- Summary ----
     print("\n" + "="*65)
     print("  PREPROCESSING COMPLETE")
@@ -790,7 +1222,9 @@ def main() -> None:
     print(f"  X_test           : {X_test.shape[0]:,} rows")
     print(f"  y columns        : {list(y_train.columns)}")
     print(f"  Output dir       : {output_dir.resolve()}")
-    print(f"\n  Ready for XGBoost model training.")
+    print(f"\n  Class weights, temporal CV folds, time-block-balanced sets,")
+    print(f"  and hyperparameter search spaces are ready in the output dir.")
+    print(f"  Ready for XGBoost model training -- see train_xgboost_tuned.py")
 
 
 if __name__ == "__main__":
