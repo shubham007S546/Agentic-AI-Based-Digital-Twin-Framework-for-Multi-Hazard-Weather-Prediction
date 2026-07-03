@@ -1,386 +1,506 @@
 """
-collectors/openmeteo_collector.py
+collectors/nasa_collector_fast.py
 ══════════════════════════════════════════════════════════════════════════════
-SOURCE 5 — Open-Meteo ERA5 Reanalysis Archive (Supplementary)
-         ERA5 Historical Weather API
-         Endpoint : https://archive-api.open-meteo.com/v1/archive
+NASA GPM IMERG Half-Hourly Downloader — HIGH SPEED VERSION
 
-BUGS FIXED (from original version)
-────────────────────────────────────
-  BUG 1 — Wrong URL in code
-    BEFORE: historical-forecast-api.open-meteo.com  ← causes 500 errors
-    AFTER : archive-api.open-meteo.com              ← correct ERA5 endpoint
-    WHY   : historical-forecast-api only archives forecast model runs from ~2022.
-            The archive-api serves ERA5 reanalysis from 1940 to present.
+WHAT CHANGED vs. the original (and why it was slow)
+────────────────────────────────────────────────────
+  SLOW 1 — Date range 2015–2025 (4,018 days × 48 files = ~192,000 files)
+    FIX   : Default range is now 2022-01-01 → 2024-09-30 (your actual project
+            period). That's ~1,095 days = ~52,560 files — 3.7× fewer files
+            before touching a single line of download logic.
 
-  BUG 2 — cape and lifted_index requested on archive endpoint
-    BEFORE: variables list included cape, lifted_index
-    AFTER : both removed from config.yaml and not requested
-    WHY   : cape and lifted_index are forecast-model variables.
-            They do NOT exist on the ERA5 archive endpoint.
-            Requesting them causes HTTP 500 ResponseError.
+  SLOW 2 — 6 concurrent downloads per day (sequential day loop on top of that)
+    FIX   : All files across ALL days are queued into a single async pool
+            with MAX_CONCURRENT=25 simultaneous HTTPS connections. On a
+            reasonable broadband connection this gives ~10–15× speedup over
+            the original approach.
 
-  BUG 3 — models=best_match sent to archive endpoint
-    BEFORE: params included "models": "best_match"
-    AFTER : models parameter removed entirely
-    WHY   : archive-api does not accept a models parameter.
-            Sending it causes a 400 or 500 error.
+  SLOW 3 — No skip-if-exists check, so re-runs re-download everything
+    FIX   : Any file that already exists on disk AND has size > 1 KB is
+            skipped immediately. This makes interrupted runs resumable
+            at zero cost — just re-run the script.
 
-What this collector does
-────────────────────────
-  1. Reads all settings from config/config.yaml.
-  2. Downloads hourly ERA5 data in monthly chunks (avoids timeout).
-  3. Saves each month's raw data as a parquet file.
-  4. Concatenates and applies basic cleaning only:
-       - parse datetime index
-       - remove duplicate timestamps
-       - sort chronologically
-       - coerce all values to float64
-       - NaN-out negative precipitation values
-       - log missing value summary
-  5. Saves cleaned parquet + CSV.
-  6. Writes metadata.json.
+  SLOW 4 — Synchronous requests inside a thread pool
+    FIX   : Pure asyncio + aiohttp — no thread overhead, true async I/O,
+            much better CPU utilisation at high concurrency.
 
-Variables available on archive-api (ERA5)
-──────────────────────────────────────────
-  precipitation, rain, snowfall, temperature_2m, relative_humidity_2m,
-  wind_speed_10m, wind_gusts_10m, wind_direction_10m, surface_pressure,
-  cloud_cover, weather_code, et0_fao_evapotranspiration,
-  soil_temperature_0_to_7cm, soil_moisture_0_to_7cm
-  (cape and lifted_index are NOT available — forecast-only)
+SPEED ESTIMATE (approximate, depends on your connection and NASA server load)
+──────────────────────────────────────────────────────────────────────────────
+  Original   :  6 concurrent, ~192k files  → days–weeks
+  This script:  25 concurrent, ~52k files  → 3–8 hours on 50 Mbps+
 
-Install
+INSTALL
 ───────
-  pip install openmeteo-requests requests-cache retry-requests pandas pyarrow tqdm
+  pip install aiohttp aiofiles tqdm pyyaml
 
-Usage
+USAGE
 ─────
-  python -m collectors.openmeteo_collector
+  python nasa_collector_fast.py
+  python nasa_collector_fast.py --start 2022-01-01 --end 2024-09-30 --workers 25
+  python nasa_collector_fast.py --workers 40   # if NASA doesn't rate-limit you
+
+NASA EARTHDATA LOGIN
+──────────────────────
+  Credentials are read, in this priority order:
+    1. --user / --password CLI args (if passed)
+    2. EARTHDATA_USER / EARTHDATA_PASS environment variables (if set)
+    3. config.yaml -> api_keys.nasa_username / api_keys.nasa_password
+       (your project's existing config file -- this is now the default,
+       no env vars needed if config.yaml is already filled in)
+    4. ~/.netrc (if none of the above are set, aiohttp falls back to this)
+
+  Register free at: https://urs.earthdata.nasa.gov/
 """
-
 from __future__ import annotations
-
-import calendar
+import argparse
+import asyncio
+import os
 import sys
 import time
-from datetime import date
+from dataclasses import dataclass
+from datetime import date, timedelta
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Optional
+import aiohttp
+import aiofiles
+import yaml
+from tqdm.asyncio import tqdm as async_tqdm
 
-import openmeteo_requests
-import pandas as pd
-import requests_cache
-from retry_requests import retry
-from tqdm import tqdm
+# ──────────────────────────────────────────────────────────────
+#  CONFIG.YAML LOADING  (credentials + date range, per your project layout)
+# ──────────────────────────────────────────────────────────────
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from utils.config_loader   import get_config, get_source_dir, get_date_range
-from utils.logger          import get_logger
-from utils.metadata_writer import write_metadata
-
-
-SOURCE_KEY     = "openmeteo"
-COLLECTOR_NAME = "openmeteo_collector"
-POLITENESS_DELAY = 1.0   # seconds between monthly API calls
-
-
-class OpenMeteoCollector:
+def load_config(config_path: Path) -> dict:
     """
-    Downloads hourly ERA5 reanalysis weather data for Mandi district
-    from Open-Meteo's archive API (archive-api.open-meteo.com).
-
-    Downloads in monthly chunks to avoid API timeout errors.
-    All configuration driven by config/config.yaml.
+    Reads config.yaml (created alongside config.example.yaml in your repo).
+    Falls back gracefully if the file or keys are missing -- env vars /
+    --start/--end/--user/--password CLI args still work as an override.
     """
+    if not config_path.exists():
+        print(f"  NOTE: {config_path} not found -- falling back to env vars / CLI args only.")
+        return {}
+    with open(config_path, "r", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f) or {}
+    return cfg
 
-    def __init__(self) -> None:
-        self._cfg        = get_config()
-        self._src_cfg    = self._cfg["sources"][SOURCE_KEY]
-        self._loc        = self._cfg["location"]
-        self._source_dir = get_source_dir(SOURCE_KEY)
-        self._raw_dir    = self._source_dir / "raw"
-        self._clean_dir  = self._source_dir / "cleaned"
-        self._log_dir    = self._source_dir / "logs"
 
-        for d in (self._raw_dir, self._clean_dir, self._log_dir):
-            d.mkdir(parents=True, exist_ok=True)
+# ──────────────────────────────────────────────────────────────
+#  CONFIGURATION  (edit here or use CLI args)
+# ──────────────────────────────────────────────────────────────
 
-        self._logger = get_logger(COLLECTOR_NAME, source_log_dir=self._log_dir)
+DEFAULT_START      = "2022-01-01"     # ← YOUR project start (was 2015 before)
+DEFAULT_END        = "2024-09-30"     # ← YOUR project end
+DEFAULT_WORKERS    = 25               # simultaneous downloads (safe for NASA)
+DEFAULT_CHUNK_SIZE = 1024 * 256       # 256 KB read buffer per download
+MIN_VALID_SIZE_KB  = 1                # files smaller than this are re-downloaded
 
-        # SDK client with cache (avoids re-downloading on restart) and retry
-        cache_session  = requests_cache.CachedSession(
-            str(self._source_dir / ".om_cache"), expire_after=3600
+# NASA GES DISC CMR API — finds the actual download URLs for each granule
+CMR_SEARCH_URL = (
+    "https://cmr.earthdata.nasa.gov/search/granules.json"
+    "?short_name=GPM_3IMERGHHL"
+    "&version=07"
+    "&temporal[]={start}T00:00:00Z,{end}T23:59:59Z"
+    "&bounding_box=76.5,31.35,77.5,32.1"       # Mandi district bbox
+    "&page_size=2000"
+    "&page_num={page}"
+)
+EARTHDATA_LOGIN_URL = "https://urs.earthdata.nasa.gov"
+
+
+# ──────────────────────────────────────────────────────────────
+#  DATA CLASS
+# ──────────────────────────────────────────────────────────────
+
+@dataclass
+class Granule:
+    url: str
+    filename: str
+    date_str: str   # YYYY-MM-DD, for organising into subdirs
+
+
+# ──────────────────────────────────────────────────────────────
+#  CMR GRANULE DISCOVERY (async)
+# ──────────────────────────────────────────────────────────────
+
+async def discover_granules(
+    session: aiohttp.ClientSession,
+    start: date,
+    end: date,
+    output_dir: Path,
+) -> list[Granule]:
+    """
+    Query NASA CMR for all GPM IMERG half-hourly granules in the date range.
+    CMR returns paged JSON (up to 2000 results/page); we iterate all pages.
+    This replaces the per-day CMR call in the original collector with a
+    single bulk query — typically ~2–3 API calls for a 3-year period
+    instead of ~1095 individual calls.
+    """
+    granules: list[Granule] = []
+    page = 1
+    print(f"  Discovering granules via CMR ({start} → {end})...")
+
+    while True:
+        url = CMR_SEARCH_URL.format(
+            start=start.strftime("%Y-%m-%d"),
+            end=end.strftime("%Y-%m-%d"),
+            page=page,
         )
-        retry_session  = retry(cache_session, retries=3, backoff_factor=2.0)
-        self._om_client = openmeteo_requests.Client(session=retry_session)
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+            if resp.status != 200:
+                print(f"  WARNING: CMR returned HTTP {resp.status} on page {page}")
+                break
+            data = await resp.json()
 
-        self._start_date, self._end_date = get_date_range()
-        self._lat  = float(self._loc["latitude"])
-        self._lon  = float(self._loc["longitude"])
-        self._vars = self._src_cfg["variables"]["hourly"]
-        self._tz   = self._src_cfg.get("timezone", "Asia/Kolkata")
+        entries = data.get("feed", {}).get("entry", [])
+        if not entries:
+            break
 
-        # FIX 1: Always use the archive endpoint from config
-        self._url = self._src_cfg["base_url"]
-        # Verify it is the archive endpoint — warn if wrong
-        if "historical-forecast-api" in self._url:
-            self._logger.warning(
-                "WARNING: base_url points to historical-forecast-api which does NOT "
-                "support cape/lifted_index and causes 500 errors. "
-                "Fix: set base_url to https://archive-api.open-meteo.com/v1/archive"
-            )
+        for entry in entries:
+            for link in entry.get("links", []):
+                href = link.get("href", "")
+                if href.endswith(".HDF5") and "3B-HHR" in href:
+                    fname = href.split("/")[-1]
+                    # Extract date from filename: 3B-HHR*.YYYYMMDD-S*.HDF5
+                    try:
+                        date_part = [p for p in fname.split(".") if len(p) == 8 and p.isdigit()][0]
+                        d_str = f"{date_part[:4]}-{date_part[4:6]}-{date_part[6:8]}"
+                    except (IndexError, ValueError):
+                        d_str = "unknown"
+                    granules.append(Granule(url=href, filename=fname, date_str=d_str))
+                    break
 
-        # FIX 2: Verify cape/lifted_index not in variable list
-        blocked = {"cape", "lifted_index"}
-        bad_vars = blocked.intersection(set(self._vars))
-        if bad_vars:
-            self._logger.warning(
-                f"Removing {bad_vars} from variable list — "
-                f"these are NOT available on the archive endpoint and cause 500 errors."
-            )
-            self._vars = [v for v in self._vars if v not in blocked]
+        print(f"    Page {page}: {len(entries)} entries found ({len(granules)} total so far)")
+        if len(entries) < 2000:
+            break
+        page += 1
 
-    # ══════════════════════════════════════════════════════════
-    #  PUBLIC ENTRY POINT
-    # ══════════════════════════════════════════════════════════
+    print(f"  Total granules discovered: {len(granules):,}")
+    return granules
 
-    def run(self) -> Path:
-        self._logger.info("=" * 70)
-        self._logger.info("Open-Meteo ERA5 Archive Collector — START")
-        self._logger.info(f"Endpoint  : {self._url}")
-        self._logger.info(f"Location  : {self._loc['district']}, {self._loc['state']}")
-        self._logger.info(f"Lat/Lon   : {self._lat}, {self._lon}")
-        self._logger.info(f"Period    : {self._start_date} → {self._end_date}")
-        self._logger.info(f"Variables : {self._vars}")
-        self._logger.info(f"Chunks    : Monthly (avoids timeout)")
-        self._logger.info("=" * 70)
 
-        raw_dfs = list(self._download_all_chunks())
+# ──────────────────────────────────────────────────────────────
+#  SINGLE FILE DOWNLOADER (async)
+# ──────────────────────────────────────────────────────────────
 
-        if not raw_dfs:
-            msg = "No data downloaded. Check internet connection and config."
-            self._logger.error(msg)
-            raise RuntimeError(f"OpenMeteoCollector: {msg}")
+async def download_one(
+    session: aiohttp.ClientSession,
+    granule: Granule,
+    output_dir: Path,
+    semaphore: asyncio.Semaphore,
+    chunk_size: int,
+    stats: dict,
+    max_retries: int = 5,
+    backoff_factor: float = 2.0,
+    retry_on_status: tuple[int, ...] = (429, 500, 502, 503, 504),
+    timeout_seconds: int = 120,
+) -> None:
+    """
+    Download a single HDF5 granule. Skips if the file already exists
+    and is larger than MIN_VALID_SIZE_KB (resume support).
 
-        df_raw = pd.concat(raw_dfs, axis=0, ignore_index=True)
-        self._logger.info(
-            f"Raw combined: {len(df_raw):,} rows × {len(df_raw.columns)} columns"
+    Retries with exponential backoff on transient failures (429 rate-limit,
+    5xx server errors) instead of just marking the file failed -- this
+    matters more than raw concurrency for total wall-clock time: without
+    it, every 429 becomes a file you have to manually re-run the whole
+    script to retry, and pushing workers higher just makes 429s MORE
+    likely, not less. Reads retry policy from config.yaml's http: section
+    if available (falls back to sane defaults otherwise).
+    """
+    # Organise into per-day subdirs: output_dir/YYYY/MM/YYYY-MM-DD/file.HDF5
+    if granule.date_str != "unknown":
+        year, month = granule.date_str[:4], granule.date_str[5:7]
+        dest_dir = output_dir / year / month / granule.date_str
+    else:
+        dest_dir = output_dir / "unknown"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest_path = dest_dir / granule.filename
+
+    # ── Skip if already downloaded ──
+    if dest_path.exists() and dest_path.stat().st_size > MIN_VALID_SIZE_KB * 1024:
+        stats["skipped"] += 1
+        return
+
+    async with semaphore:
+        for attempt in range(max_retries + 1):
+            try:
+                async with session.get(
+                    granule.url,
+                    timeout=aiohttp.ClientTimeout(total=timeout_seconds, connect=30),
+                    allow_redirects=True,
+                ) as resp:
+                    if resp.status == 200:
+                        async with aiofiles.open(dest_path, "wb") as f:
+                            async for chunk in resp.content.iter_chunked(chunk_size):
+                                await f.write(chunk)
+                        stats["downloaded"] += 1
+                        stats["bytes"] += dest_path.stat().st_size
+                        return
+                    elif resp.status == 401:
+                        stats["auth_errors"] += 1
+                        stats["failed"] += 1
+                        if stats["auth_errors"] == 1:
+                            print(
+                                "\n  AUTH ERROR (401): NASA Earthdata login failed.\n"
+                                "  Check nasa_username / nasa_password in config.yaml,\n"
+                                "  or EARTHDATA_USER / EARTHDATA_PASS env vars.\n"
+                                "  Register free at: https://urs.earthdata.nasa.gov/\n"
+                            )
+                        return   # not retryable -- wrong credentials won't fix themselves
+                    elif resp.status in retry_on_status and attempt < max_retries:
+                        wait = backoff_factor ** attempt
+                        stats["retries"] += 1
+                        await asyncio.sleep(wait)
+                        continue   # retry
+                    else:
+                        stats["failed"] += 1
+                        return
+            except asyncio.TimeoutError:
+                if attempt < max_retries:
+                    stats["retries"] += 1
+                    await asyncio.sleep(backoff_factor ** attempt)
+                    continue
+                stats["failed"] += 1
+                if dest_path.exists():
+                    dest_path.unlink()
+                return
+            except Exception:
+                stats["failed"] += 1
+                if dest_path.exists():
+                    dest_path.unlink()
+                return
+
+
+# ──────────────────────────────────────────────────────────────
+#  MAIN ASYNC RUNNER
+# ──────────────────────────────────────────────────────────────
+
+async def run(
+    start: date,
+    end: date,
+    output_dir: Path,
+    max_workers: int,
+    chunk_size: int,
+    earthdata_user: Optional[str],
+    earthdata_pass: Optional[str],
+    max_retries: int = 5,
+    backoff_factor: float = 2.0,
+    retry_on_status: tuple[int, ...] = (429, 500, 502, 503, 504),
+    timeout_seconds: int = 120,
+) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    semaphore = asyncio.Semaphore(max_workers)
+
+    stats = {
+        "downloaded": 0,
+        "skipped": 0,
+        "failed": 0,
+        "auth_errors": 0,
+        "retries": 0,
+        "bytes": 0,
+    }
+
+    # NASA Earthdata requires Basic Auth on the actual data server,
+    # but the redirect chain (CMR → pps.gsfc.nasa.gov → urs.earthdata.nasa.gov)
+    # is handled by passing credentials as BasicAuth to aiohttp.
+    auth = None
+    if earthdata_user and earthdata_pass:
+        auth = aiohttp.BasicAuth(earthdata_user, earthdata_pass)
+    else:
+        print(
+            "  WARNING: No NASA Earthdata credentials found (checked config.yaml,\n"
+            "  env vars, and CLI args). Downloads will likely fail with 401 unless\n"
+            "  you have a ~/.netrc file.\n"
         )
 
-        raw_path                    = self._save_raw(df_raw)
-        df_cleaned                  = self._clean(df_raw)
-        cleaned_parquet, cleaned_csv = self._save_cleaned(df_cleaned)
+    connector = aiohttp.TCPConnector(
+        limit=max_workers + 5,   # slightly above semaphore so connector isn't the bottleneck
+        ttl_dns_cache=300,
+        ssl=True,
+    )
 
-        meta_path = write_metadata(
-            source_dir        = self._source_dir,
-            source_name       = self._src_cfg["name"],
-            api_url           = self._url,
-            update_frequency  = self._src_cfg["update_frequency"],
-            df_cleaned        = df_cleaned.reset_index(),
-            raw_file_path     = raw_path,
-            cleaned_file_path = cleaned_parquet,
-            extra={
-                "endpoint":               "ERA5 Historical Weather API (archive-api)",
-                "variables_downloaded":   self._vars,
-                "latitude":               self._lat,
-                "longitude":              self._lon,
-                "timezone":               self._tz,
-                "resolution":             "Hourly (ERA5 reanalysis, ~25km)",
-                "chunk_strategy":         "Monthly (avoids timeout)",
-                "sdk":                    "openmeteo-requests (FlatBuffers protocol)",
-                "cape_available":         False,
-                "lifted_index_available": False,
-                "era5_coverage":          "1940-01-01 to present",
-                "note": (
-                    "cape and lifted_index removed — not available on archive endpoint. "
-                    "They are forecast-only variables."
-                ),
-            },
+    async with aiohttp.ClientSession(
+        connector=connector,
+        auth=auth,
+        headers={"User-Agent": "GPM-IMERG-Downloader/2.0 (research project)"},
+    ) as session:
+
+        # ── Step 1: Discover all granule URLs via CMR ──
+        granules = await discover_granules(session, start, end, output_dir)
+
+        if not granules:
+            print("  No granules found. Check date range, bbox, and CMR availability.")
+            return
+
+        already_done = sum(
+            1 for g in granules
+            if (output_dir / g.date_str[:4] / g.date_str[5:7] / g.date_str / g.filename).exists()
+            and (output_dir / g.date_str[:4] / g.date_str[5:7] / g.date_str / g.filename).stat().st_size
+               > MIN_VALID_SIZE_KB * 1024
+        )
+        to_download = len(granules) - already_done
+        print(f"\n  {len(granules):,} total granules | {already_done:,} already on disk | "
+              f"{to_download:,} to download")
+        print(f"  Concurrency : {max_workers} parallel downloads")
+        print(f"  Output dir  : {output_dir.resolve()}\n")
+
+        if to_download == 0:
+            print("  All files already downloaded. Nothing to do.")
+            return
+
+        # ── Step 2: Download everything in parallel ──
+        t0 = time.perf_counter()
+        tasks = [
+            download_one(session, g, output_dir, semaphore, chunk_size, stats,
+                         max_retries=max_retries, backoff_factor=backoff_factor,
+                         retry_on_status=retry_on_status, timeout_seconds=timeout_seconds)
+            for g in granules
+        ]
+
+        for coro in async_tqdm.as_completed(
+            tasks,
+            total=len(tasks),
+            desc="Downloading",
+            unit="file",
+            dynamic_ncols=True,
+        ):
+            await coro
+
+        elapsed = time.perf_counter() - t0
+
+    # ── Summary ──
+    total_mb = stats["bytes"] / (1024 ** 2)
+    speed_mbps = total_mb / max(elapsed, 1)
+    print(f"\n{'='*60}")
+    print(f"  DOWNLOAD COMPLETE")
+    print(f"{'='*60}")
+    print(f"  Downloaded : {stats['downloaded']:,} files  ({total_mb:.0f} MB)")
+    print(f"  Skipped    : {stats['skipped']:,} (already on disk)")
+    print(f"  Retried    : {stats['retries']:,} requests (rate-limit/server-error backoff)")
+    print(f"  Failed     : {stats['failed']:,}")
+    print(f"  Time       : {elapsed/60:.1f} min  ({speed_mbps:.1f} MB/s avg)")
+    print(f"  Output     : {output_dir.resolve()}")
+
+    if stats["failed"] > 0:
+        print(f"\n  {stats['failed']} files failed. Re-run the script to retry them —")
+        print(f"  completed files are skipped automatically (resume support).")
+
+    if stats["auth_errors"] > 0:
+        print(f"\n  {stats['auth_errors']} files failed with 401 (auth error).")
+        print(f"  Fix: set nasa_username / nasa_password in config.yaml, or")
+        print(f"  EARTHDATA_USER / EARTHDATA_PASS environment variables.")
+
+
+# ──────────────────────────────────────────────────────────────
+#  ENTRY POINT
+# ──────────────────────────────────────────────────────────────
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Fast async NASA GPM IMERG downloader")
+    parser.add_argument("--start",   default=None,
+                        help=f"Start date YYYY-MM-DD (default: config.yaml dates.start_date, "
+                             f"else {DEFAULT_START})")
+    parser.add_argument("--end",     default=None,
+                        help=f"End date YYYY-MM-DD (default: config.yaml dates.end_date, "
+                             f"else {DEFAULT_END})")
+    parser.add_argument("--output",  default=None,
+                        help="Output directory (default: source_2_nasa_gpm/raw/)")
+    parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS,
+                        help=f"Parallel downloads (default: {DEFAULT_WORKERS}, max recommended: 40)")
+    parser.add_argument("--config",  default=None,
+                        help="Path to config.yaml (default: ../config/config.yaml relative to this script)")
+    parser.add_argument("--user",     default=None, help="NASA Earthdata username (overrides config.yaml)")
+    parser.add_argument("--password", default=None, help="NASA Earthdata password (overrides config.yaml)")
+    args = parser.parse_args()
+
+    # Resolve output dir relative to script location if not specified
+    script_dir = Path(__file__).resolve().parent
+
+    # ── Load config.yaml ──
+    config_path = Path(args.config) if args.config else script_dir.parent / "config" / "config.yaml"
+    cfg = load_config(config_path)
+    cfg_dates = cfg.get("dates", {})
+    cfg_nasa = cfg.get("sources", {}).get("nasa_gpm", {})
+    cfg_api_keys = cfg.get("api_keys", {})
+    cfg_http = cfg.get("http", {})
+
+    if args.output:
+        output_dir = Path(args.output)
+    elif cfg_nasa.get("download_dir"):
+        output_dir = (script_dir.parent / cfg_nasa["download_dir"] / "raw")
+    else:
+        candidate = script_dir.parent / "datasets" / "source_2_nasa_gpm" / "raw"
+        output_dir = candidate if candidate.parent.parent.exists() else script_dir / "nasa_gpm_raw"
+
+    # ── Resolve credentials: CLI > env vars > config.yaml > .netrc ──
+    earthdata_user = args.user or os.environ.get("EARTHDATA_USER") or cfg_api_keys.get("nasa_username")
+    earthdata_pass = args.password or os.environ.get("EARTHDATA_PASS") or cfg_api_keys.get("nasa_password")
+
+    # Guard against the placeholder values still sitting in config.example.yaml
+    placeholder_markers = ("ENTER_YOUR_", "YOUR_NASA")
+    if earthdata_user and any(m in earthdata_user for m in placeholder_markers):
+        earthdata_user = None
+    if earthdata_pass and any(m in earthdata_pass for m in placeholder_markers):
+        earthdata_pass = None
+
+    netrc_path = Path.home() / ".netrc"
+    if not earthdata_user and not netrc_path.exists():
+        print(
+            "\n  ╔══════════════════════════════════════════════════════════╗\n"
+            "  ║  NASA EARTHDATA CREDENTIALS REQUIRED                     ║\n"
+            "  ║                                                          ║\n"
+            "  ║  Fill these in config.yaml under api_keys:                ║\n"
+            "  ║    nasa_username: your_username                          ║\n"
+            "  ║    nasa_password: your_password                          ║\n"
+            "  ║                                                          ║\n"
+            "  ║  Or pass --user / --password on the command line,        ║\n"
+            "  ║  or set EARTHDATA_USER / EARTHDATA_PASS env vars.        ║\n"
+            "  ║                                                          ║\n"
+            "  ║  Register free at: https://urs.earthdata.nasa.gov/      ║\n"
+            "  ╚══════════════════════════════════════════════════════════╝\n"
         )
 
-        self._logger.info("=" * 70)
-        self._logger.info("Open-Meteo ERA5 Collector — COMPLETE")
-        self._logger.info(f"Cleaned rows : {len(df_cleaned):,}")
-        self._logger.info(f"CSV          : {cleaned_csv}")
-        self._logger.info(f"Parquet      : {cleaned_parquet}")
-        self._logger.info(f"Metadata     : {meta_path}")
-        self._logger.info("=" * 70)
+    # ── Resolve date range: CLI > config.yaml > script defaults ──
+    start_str = args.start or cfg_dates.get("start_date") or DEFAULT_START
+    end_str   = args.end   or cfg_dates.get("end_date")   or DEFAULT_END
+    start = date.fromisoformat(start_str)
+    end   = date.fromisoformat(end_str)
+    days  = (end - start).days + 1
+    est_files = days * 48
+    est_gb = est_files * 7.5 / 1024  # ~7.5 MB per HDF5 file average
 
-        return cleaned_parquet
+    print("=" * 60)
+    print("  NASA GPM IMERG FAST DOWNLOADER")
+    print("=" * 60)
+    print(f"  Config     : {config_path}  {'(found)' if config_path.exists() else '(not found -- using defaults)'}")
+    print(f"  Date range : {start} → {end}  ({days:,} days)")
+    print(f"  Est. files : ~{est_files:,}  (~{est_gb:.0f} GB)")
+    print(f"  Workers    : {args.workers} concurrent downloads")
+    print(f"  Credentials: {'from config.yaml' if (earthdata_user and cfg_api_keys.get('nasa_username') == earthdata_user) else ('from CLI/env' if earthdata_user else 'NOT SET -- relying on ~/.netrc')}")
+    print(f"  Output     : {output_dir.resolve()}")
+    print()
 
-    # ══════════════════════════════════════════════════════════
-    #  MONTHLY CHUNK ITERATOR
-    # ══════════════════════════════════════════════════════════
+    if days > 365 * 3 + 1:
+        print(f"  NOTE: You are downloading {days} days of data. Your project uses\n"
+              f"  2022-01-01 → 2024-09-30 (~1,004 days). If you have already run\n"
+              f"  this with a wider range and want to restart, pass:\n"
+              f"    --start 2022-01-01 --end 2024-09-30\n"
+              f"  This reduces files from ~{days*48:,} to ~{1004*48:,} (3.5x faster).\n")
 
-    def _iter_monthly_chunks(self) -> Iterator[tuple[date, date]]:
-        """
-        Yield (chunk_start, chunk_end) one per calendar month.
-        Monthly chunks (~720 rows each) are reliable.
-        Yearly chunks (~8760 rows) time out on the archive API.
-        """
-        cur = date(self._start_date.year, self._start_date.month, 1)
-        while cur <= self._end_date:
-            last_day    = calendar.monthrange(cur.year, cur.month)[1]
-            chunk_end   = min(date(cur.year, cur.month, last_day), self._end_date)
-            chunk_start = max(cur, self._start_date)
-            yield chunk_start, chunk_end
-            # Advance to first of next month
-            if cur.month == 12:
-                cur = date(cur.year + 1, 1, 1)
-            else:
-                cur = date(cur.year, cur.month + 1, 1)
-
-    # ══════════════════════════════════════════════════════════
-    #  DOWNLOAD
-    # ══════════════════════════════════════════════════════════
-
-    def _download_all_chunks(self) -> Iterator[pd.DataFrame]:
-        chunks = list(self._iter_monthly_chunks())
-        self._logger.info(
-            f"Downloading {len(chunks)} monthly chunk(s) "
-            f"({self._start_date} → {self._end_date})..."
-        )
-
-        for chunk_start, chunk_end in tqdm(chunks, desc="Downloading months", unit="month"):
-            self._logger.info(f"  Chunk: {chunk_start} → {chunk_end}")
-            df = self._fetch_chunk(chunk_start, chunk_end)
-
-            if df is None or df.empty:
-                self._logger.warning(f"  {chunk_start}–{chunk_end}: empty, skipping.")
-                continue
-
-            # Save monthly raw parquet
-            fname    = f"openmeteo_mandi_{chunk_start.year}{chunk_start.month:02d}_raw.parquet"
-            raw_path = self._raw_dir / fname
-            df.to_parquet(raw_path, index=False, engine="pyarrow")
-            self._logger.info(f"  Saved: {fname} ({len(df):,} rows)")
-
-            time.sleep(POLITENESS_DELAY)
-            yield df
-
-    def _fetch_chunk(self, start: date, end: date) -> Optional[pd.DataFrame]:
-        """
-        Fetch one monthly chunk using the openmeteo-requests SDK.
-
-        Key fixes applied here:
-          - No 'models' parameter (invalid on archive endpoint)
-          - No cape or lifted_index (not available on archive endpoint)
-          - URL always points to archive-api (set in __init__)
-        """
-        params = {
-            "latitude":           self._lat,
-            "longitude":          self._lon,
-            "start_date":         start.strftime("%Y-%m-%d"),
-            "end_date":           end.strftime("%Y-%m-%d"),
-            "hourly":             self._vars,
-            "timezone":           self._tz,
-            "wind_speed_unit":    self._src_cfg.get("wind_speed_unit", "kmh"),
-            "precipitation_unit": self._src_cfg.get("precipitation_unit", "mm"),
-            # FIX 3: NO "models" parameter — not valid on archive endpoint
-        }
-
-        try:
-            responses = self._om_client.weather_api(self._url, params=params)
-            response  = responses[0]
-            hourly    = response.Hourly()
-            n_vars    = hourly.VariablesLength()
-
-            # Build datetime index from FlatBuffers timestamps
-            times = pd.date_range(
-                start     = pd.to_datetime(hourly.Time(),    unit="s", utc=True),
-                end       = pd.to_datetime(hourly.TimeEnd(), unit="s", utc=True),
-                freq      = pd.Timedelta(seconds=hourly.Interval()),
-                inclusive = "left",
-            )
-
-            data: dict = {"time": times}
-            for i, var_name in enumerate(self._vars):
-                if i < n_vars:
-                    data[var_name] = hourly.Variables(i).ValuesAsNumpy()
-                else:
-                    import numpy as np
-                    data[var_name] = np.full(len(times), float("nan"))
-                    self._logger.warning(f"  '{var_name}' not returned by API — NaN filled.")
-
-            df = pd.DataFrame(data)
-            self._logger.info(f"  ✓ {len(df):,} rows × {n_vars} vars ({start} → {end})")
-            return df
-
-        except Exception as exc:
-            self._logger.error(f"  Fetch failed {start}–{end}: {type(exc).__name__}: {exc}")
-            return None
-
-    # ══════════════════════════════════════════════════════════
-    #  BASIC CLEANING  (no feature engineering)
-    # ══════════════════════════════════════════════════════════
-
-    def _clean(self, df: pd.DataFrame) -> pd.DataFrame:
-        self._logger.info("Cleaning: starting basic cleaning pipeline...")
-        df = df.copy()
-        original_rows = len(df)
-
-        # Parse datetime → UTC-aware index
-        df["time"] = pd.to_datetime(df["time"], errors="coerce", utc=True)
-        df = df.set_index("time")
-        df.index.name = "datetime_utc"
-
-        # Remove duplicate timestamps
-        dupes = df.index.duplicated(keep="first").sum()
-        if dupes > 0:
-            self._logger.warning(f"  Removing {dupes} duplicate timestamps.")
-            df = df[~df.index.duplicated(keep="first")]
-
-        # Sort chronologically
-        df = df.sort_index()
-
-        # Coerce all value columns to float64
-        for col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").astype("float64")
-
-        # NaN-out negative precipitation values (physically impossible)
-        precip_cols = [c for c in df.columns if "precipitation" in c or c in ("rain", "snowfall")]
-        for col in precip_cols:
-            neg = int((df[col] < 0).sum())
-            if neg > 0:
-                df.loc[df[col] < 0, col] = float("nan")
-                self._logger.warning(f"  {neg} negative values in '{col}' → NaN.")
-
-        # Missing value summary
-        self._logger.info("  Missing value summary:")
-        for col in df.columns:
-            n = int(df[col].isna().sum())
-            if n > 0:
-                self._logger.warning(f"    {col:<35}: {n:>5} missing ({n/len(df)*100:.1f}%)")
-            else:
-                self._logger.info(f"    {col:<35}: 0 missing")
-
-        self._logger.info(
-            f"  Cleaning complete: {original_rows:,} → {len(df):,} rows"
-        )
-        return df
-
-    # ══════════════════════════════════════════════════════════
-    #  SAVE
-    # ══════════════════════════════════════════════════════════
-
-    def _save_raw(self, df: pd.DataFrame) -> Path:
-        path = self._raw_dir / "openmeteo_mandi_all_raw.parquet"
-        df.to_parquet(path, index=False, engine="pyarrow")
-        self._logger.info(f"Raw consolidated: {path.name} ({len(df):,} rows)")
-        return path
-
-    def _save_cleaned(self, df: pd.DataFrame) -> tuple[Path, Path]:
-        parquet_path = self._clean_dir / "openmeteo_mandi_cleaned.parquet"
-        csv_path     = self._clean_dir / "openmeteo_mandi_cleaned.csv"
-        df.to_parquet(parquet_path, index=True, engine="pyarrow")
-        df.to_csv(csv_path, index=True)
-        size_mb = parquet_path.stat().st_size / 1_048_576
-        self._logger.info(f"Cleaned parquet : {parquet_path.name} ({size_mb:.2f} MB)")
-        self._logger.info(f"Cleaned CSV     : {csv_path.name}")
-        return parquet_path, csv_path
+    asyncio.run(run(
+        start=start,
+        end=end,
+        output_dir=output_dir,
+        max_workers=args.workers,
+        chunk_size=DEFAULT_CHUNK_SIZE,
+        earthdata_user=earthdata_user,
+        earthdata_pass=earthdata_pass,
+        max_retries=cfg_http.get("max_retries", 5),
+        backoff_factor=cfg_http.get("backoff_factor", 2.0),
+        retry_on_status=tuple(cfg_http.get("retry_on_status", [429, 500, 502, 503, 504])),
+        timeout_seconds=cfg_http.get("timeout_seconds", 120),
+    ))
 
 
 if __name__ == "__main__":
-    collector = OpenMeteoCollector()
-    collector.run()
+    main()

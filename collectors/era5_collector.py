@@ -3,43 +3,46 @@ collectors/era5_collector.py
 ══════════════════════════════════════════════════════════════════════════════
 SOURCE 4 — ERA5 Reanalysis via Copernicus Climate Data Store (CDS API)
 
-Replaces: WRIS (India-WRIS river basin data)
-Reason: ERA5 gives complete, consistent, gridded hourly reanalysis data
-        covering the full Mandi bounding box from 1940 onwards.
+WHY THIS VERSION IS "MONTHLY + CONCURRENT" (NOT YEARLY)
+────────────────────────────────────────────────────────
+  The previous "yearly chunk" version tried to cut queue-wait overhead by
+  requesting a full year (365×24×10 ≈ 87,600 fields) in one call. That
+  looked safe under CDS's OLD field-count limit, but the CURRENT CDS-Beta
+  backend prices requests using its own "cost" metric that also weights
+  bounding-box area and grid resolution — not just raw field count. Every
+  one of your 11 yearly requests came back with:
+
+      "Cost limits exceeded... your request is too large, please reduce
+      your selection."
+
+  So: yearly requests are no longer viable at 10 variables. The fix is to
+  go back to MONTHLY requests (small enough to always clear CDS's cost
+  cap — a month × 24h × 10 vars is ~7,440 fields, comfortably under any
+  version of their limit), but still submit them CONCURRENTLY via
+  ThreadPoolExecutor instead of one-at-a-time. You lose the extra "12x
+  fewer requests" win, but you keep most of the speedup from parallel
+  queue-waiting, and — critically — every request actually succeeds.
+
+  If you ever want to try bigger chunks again (e.g. quarterly), do it
+  cautiously and expect to dial it back down if CDS rejects it — there's
+  no documented exact number to target, since the cost formula isn't
+  published. Monthly is the known-safe baseline.
 
 What this collector does
 ────────────────────────
   1. Reads all settings from config/config.yaml — no hard-coded values.
   2. Authenticates using the CDS API key from config (api_keys.cds_api_key).
-  3. Downloads ERA5 single-level reanalysis in monthly NetCDF chunks,
-     cropped to the Mandi bounding box.
+  3. Downloads ERA5 single-level reanalysis in MONTHLY NetCDF chunks,
+     cropped to the Mandi bounding box, submitted concurrently.
   4. Parses each NetCDF, extracts all variables, crops to bbox.
   5. Derives wind speed and direction from U/V components.
   6. Converts units: temperature K→°C, precipitation m→mm, pressure Pa→hPa.
-  7. Saves raw NetCDF files and cleaned monthly CSVs.
+  7. Saves raw monthly NetCDF files and cleaned MONTHLY CSVs.
   8. Writes metadata.json after the full run.
 
-Variables downloaded (from config.yaml → sources.era5.variables)
-────────────────────────────────────────────────────────────────
-  10m_u_component_of_wind              → wind_u_10m (m/s)
-  10m_v_component_of_wind              → wind_v_10m (m/s)
-  2m_dewpoint_temperature              → dewpoint_2m (°C)
-  2m_temperature                       → temperature_2m (°C)
-  mean_sea_level_pressure              → mslp (hPa)
-  surface_pressure                     → surface_pressure (hPa)
-  total_precipitation                  → total_precipitation (mm)
-  total_cloud_cover                    → cloud_cover (0–1)
-  convective_precipitation             → convective_precipitation (mm)
-  convective_available_potential_energy→ cape (J/kg)
-
-Derived variables (computed after download)
-────────────────────────────────────────────
-  wind_speed_10m   = sqrt(u² + v²)           m/s
-  wind_dir_10m     = atan2(-u, -v) * 180/π   degrees from North
-
 Output files
-────────────
-  datasets/source_4_era5/raw/era5_mandi_YYYY_MM.nc      (NetCDF per month)
+─────────────
+  datasets/source_4_era5/raw/era5_mandi_YYYYMM.nc
   datasets/source_4_era5/cleaned/era5_mandi_YYYYMM_cleaned.csv
   datasets/source_4_era5/metadata.json
   datasets/source_4_era5/logs/era5_collector_YYYYMMDD.log
@@ -48,6 +51,14 @@ Usage
 ─────
   pip install cdsapi xarray netcdf4 scipy numpy pandas tqdm
   python -m collectors.era5_collector
+
+Config options (config.yaml → sources.era5)
+──────────────────────────────────────────────
+  max_concurrent_downloads: 3   # how many monthly requests to submit at once
+                                 # (CDS accounts typically allow a small number
+                                 #  of concurrent queued requests per user —
+                                 #  going much above ~4-5 risks CDS itself
+                                 #  queuing your requests behind each other)
 
 CDS API key setup
 ─────────────────
@@ -59,10 +70,11 @@ CDS API key setup
 
 from __future__ import annotations
 
-import calendar
 import sys
 import time
-from datetime import date
+import zipfile
+from calendar import monthrange
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Iterator, Optional
 import numpy as np
@@ -86,9 +98,12 @@ except ImportError as e:
 
 SOURCE_KEY = "era5"
 COLLECTOR_NAME = "era5_collector"
-POLITENESS_DELAY = 2.0  # seconds between CDS requests
+DEFAULT_MAX_CONCURRENT = 3   # concurrent CDS requests — see module docstring
 
-# Mapping: CDS variable name → clean column name in output CSV
+# Substrings CDS uses in its "too large" error — used to give a clearer
+# log message (and would be the hook point if you ever add auto-splitting).
+COST_LIMIT_MARKERS = ("cost limit", "too large", "reduce your selection")
+
 VARIABLE_RENAME = {
     "u10":  "wind_u_10m",
     "v10":  "wind_v_10m",
@@ -105,25 +120,19 @@ VARIABLE_RENAME = {
 
 class ERA5Downloader:
     """
-    Downloads ERA5 monthly NetCDF files from the Copernicus CDS.
+    Downloads ERA5 MONTHLY NetCDF files from the Copernicus CDS.
 
-    Uses cdsapi.Client, which reads credentials from the CDS API key
-    that we inject programmatically from config.yaml.
-
-    Parameters
-    ----------
-    cds_client : cdsapi.Client
-    raw_dir    : Path — destination for NetCDF files
-    dataset    : str  — CDS dataset name
-    product_type : str
-    variables  : list[str] — CDS variable names
-    bbox       : dict — lat_min, lat_max, lon_min, lon_max
-    logger
+    Each call to download_month() creates its OWN cdsapi.Client instance —
+    this is what makes it safe to call from multiple threads concurrently.
+    Sharing one client across threads risks corrupted concurrent requests
+    since cdsapi.Client wraps a requests.Session that isn't documented as
+    thread-safe.
     """
 
     def __init__(
         self,
-        cds_client: cdsapi.Client,
+        cds_url: str,
+        cds_key: str,
         raw_dir: Path,
         dataset: str,
         product_type: str,
@@ -131,7 +140,8 @@ class ERA5Downloader:
         bbox: dict,
         logger,
     ) -> None:
-        self._client = cds_client
+        self._cds_url = cds_url
+        self._cds_key = cds_key
         self._raw_dir = raw_dir
         self._dataset = dataset
         self._product_type = product_type
@@ -141,52 +151,34 @@ class ERA5Downloader:
 
     def download_month(self, year: int, month: int) -> Optional[Path]:
         """
-        Download one month of ERA5 data as a NetCDF file.
-
-        CDS sometimes returns a ZIP archive even when NetCDF is requested
-        (magic bytes 504B0304). This method auto-detects and extracts ZIPs.
-
-        Parameters
-        ----------
-        year  : int
-        month : int
+        Download one MONTH of ERA5 data as a single NetCDF file.
 
         Returns
         -------
         Path to the final .nc file, or None on failure.
         """
-        import zipfile
+        nc_path = self._raw_dir / f"era5_mandi_{year}{month:02d}.nc"
 
-        nc_path = self._raw_dir / f"era5_mandi_{year}_{month:02d}.nc"
-
-        # ── Duplicate / cache check ──────────────────────────────────────
-        # Only skip if the cached file is a real NetCDF, not a ZIP
+        # ── Cache check ────────────────────────────────────────────────
         if nc_path.exists() and nc_path.stat().st_size > 0:
             with open(nc_path, "rb") as fh:
                 magic = fh.read(4)
-            if magic[:4] != b"PK\x03\x04":  # not a ZIP
-                self._logger.info(
-                    f"  Cached (valid): {nc_path.name} — skipping."
-                )
+            if magic[:4] != b"PK\x03\x04":
+                self._logger.info(f"  Cached (valid): {nc_path.name} — skipping.")
                 return nc_path
-            else:
-                # It's a ZIP saved with .nc extension — delete and re-download
-                self._logger.warning(
-                    f"  Cached file is a ZIP disguised as .nc — deleting "
-                    f"and re-downloading: {nc_path.name}"
-                )
-                nc_path.unlink()
+            self._logger.warning(
+                f"  Cached file is a ZIP disguised as .nc — deleting and re-downloading: {nc_path.name}"
+            )
+            nc_path.unlink()
 
-        # Build request
-        last_day = calendar.monthrange(year, month)[1]
-        days = [f"{d:02d}" for d in range(1, last_day + 1)]
+        # Fresh client per call — safe for concurrent threads
+        client = cdsapi.Client(url=self._cds_url, key=self._cds_key, quiet=True, verify=True)
+
+        n_days = monthrange(year, month)[1]
+        days = [f"{d:02d}" for d in range(1, n_days + 1)]
         hours = [f"{h:02d}:00" for h in range(24)]
-        area = [
-            self._bbox["lat_max"],
-            self._bbox["lon_min"],
-            self._bbox["lat_min"],
-            self._bbox["lon_max"],
-        ]
+        area = [self._bbox["lat_max"], self._bbox["lon_min"],
+                self._bbox["lat_min"], self._bbox["lon_max"]]
 
         request = {
             "product_type": [self._product_type],
@@ -200,93 +192,64 @@ class ERA5Downloader:
             "area": area,
         }
 
+        n_fields = len(days) * 24 * len(self._variables)
         self._logger.info(
             f"  Requesting CDS: {year}-{month:02d} "
-            f"({len(days)} days × 24 hrs × {len(self._variables)} vars)"
+            f"(~{n_fields:,} fields, {len(self._variables)} vars)"
         )
 
-        # Download to a temp path first
-        tmp_path = self._raw_dir / f"era5_mandi_{year}_{month:02d}.tmp"
+        tmp_path = self._raw_dir / f"era5_mandi_{year}{month:02d}.tmp"
 
         try:
-            self._client.retrieve(self._dataset, request).download(
-                str(tmp_path)
-            )
+            t0 = time.perf_counter()
+            client.retrieve(self._dataset, request).download(str(tmp_path))
+            elapsed = time.perf_counter() - t0
+            self._logger.info(f"  CDS request for {year}-{month:02d} completed in {elapsed:.1f}s")
         except Exception as exc:
-            self._logger.error(
-                f"  CDS download failed for {year}-{month:02d}: {exc}"
-            )
+            msg = str(exc).lower()
+            if any(marker in msg for marker in COST_LIMIT_MARKERS):
+                self._logger.error(
+                    f"  CDS rejected {year}-{month:02d} as too large even at monthly "
+                    f"granularity ({exc}). Try reducing the variable list in config.yaml, "
+                    f"or shrinking the bounding box."
+                )
+            else:
+                self._logger.error(f"  CDS download failed for {year}-{month:02d}: {exc}")
             tmp_path.unlink(missing_ok=True)
             return None
 
-        # ── Check what CDS actually sent ─────────────────────────────────
         with open(tmp_path, "rb") as fh:
             magic = fh.read(4)
 
         if magic[:4] == b"PK\x03\x04":
-            # CDS returned a ZIP — extract the .nc inside it
-            self._logger.info(
-                f"  CDS returned ZIP — extracting NetCDF..."
-            )
+            self._logger.info(f"  CDS returned ZIP for {year}-{month:02d} — extracting NetCDF...")
             try:
                 with zipfile.ZipFile(tmp_path, "r") as zf:
-                    nc_files = [
-                        n for n in zf.namelist()
-                        if n.lower().endswith(".nc")
-                    ]
+                    nc_files = [n for n in zf.namelist() if n.lower().endswith(".nc")]
                     if not nc_files:
-                        self._logger.error(
-                            f"  ZIP contains no .nc files: {zf.namelist()}"
-                        )
+                        self._logger.error(f"  ZIP contains no .nc files: {zf.namelist()}")
                         tmp_path.unlink(missing_ok=True)
                         return None
-
-                    # Extract the first (usually only) .nc file
                     extracted_name = nc_files[0]
                     zf.extract(extracted_name, self._raw_dir)
-                    extracted_path = self._raw_dir / extracted_name
-
-                    # Rename to our standard naming convention
-                    extracted_path.rename(nc_path)
-                    self._logger.info(
-                        f"  Extracted: {extracted_name} → {nc_path.name}"
-                    )
-
+                    (self._raw_dir / extracted_name).rename(nc_path)
+                    self._logger.info(f"  Extracted: {extracted_name} → {nc_path.name}")
                 tmp_path.unlink(missing_ok=True)
-
             except Exception as exc:
                 self._logger.error(f"  ZIP extraction failed: {exc}")
                 tmp_path.unlink(missing_ok=True)
                 return None
-
         else:
-            # Already a NetCDF — just rename temp to final
             tmp_path.rename(nc_path)
 
         size_mb = nc_path.stat().st_size / 1_048_576
-        self._logger.info(
-            f"  Ready: {nc_path.name} ({size_mb:.1f} MB)"
-        )
+        self._logger.info(f"  Ready: {nc_path.name} ({size_mb:.1f} MB)")
         return nc_path
 
 
 class ERA5Parser:
     """
-    Parses a single ERA5 NetCDF file into a clean Pandas DataFrame.
-
-    Responsibilities
-    ────────────────
-    - Open NetCDF with xarray.
-    - Extract all variables, flatten to (time, lat, lon) rows.
-    - Rename CDS short names to readable column names.
-    - Convert units: K→°C, m→mm for precipitation, Pa→hPa for pressure.
-    - Derive wind_speed_10m and wind_dir_10m from U/V components.
-    - Validate non-negative precipitation.
-
-    Parameters
-    ----------
-    bbox   : dict
-    logger
+    Parses a single ERA5 monthly NetCDF file into a clean DataFrame.
     """
 
     def __init__(self, bbox: dict, logger) -> None:
@@ -294,132 +257,78 @@ class ERA5Parser:
         self._logger = logger
 
     def parse(self, nc_path: Path) -> Optional[pd.DataFrame]:
-        """
-        Parse one NetCDF file and return a cleaned DataFrame.
-
-        Parameters
-        ----------
-        nc_path : Path
-
-        Returns
-        -------
-        pd.DataFrame with columns: time, latitude, longitude, + all variables.
-        None on failure.
-        """
         self._logger.debug(f"Parsing: {nc_path.name}")
 
-        # ── Detect actual file format from magic bytes ───────────────────
-        # CDS sometimes delivers GRIB even when NetCDF is requested.
-        # Magic: NetCDF4/HDF5 = \x89HDF  |  GRIB = GRIB  |  NetCDF3 = CDF
         with open(nc_path, "rb") as fh:
             magic = fh.read(4)
 
         ds = None
-
         if magic[:4] == b"GRIB":
-            self._logger.info(
-                f"  {nc_path.name} is GRIB — using cfgrib engine."
-            )
+            self._logger.info(f"  {nc_path.name} is GRIB — using cfgrib engine.")
             try:
                 import cfgrib  # noqa: F401
                 datasets = xr.open_datasets(nc_path, engine="cfgrib")
                 ds = xr.merge(datasets)
             except ImportError:
-                self._logger.error(
-                    "cfgrib not installed. Run: pip install cfgrib eccodes"
-                )
+                self._logger.error("cfgrib not installed. Run: pip install cfgrib eccodes")
                 return None
             except Exception as exc:
-                self._logger.error(
-                    f"Cannot open GRIB {nc_path.name}: {exc}"
-                )
+                self._logger.error(f"Cannot open GRIB {nc_path.name}: {exc}")
                 return None
-
         else:
-            # NetCDF3 (CDF\x01) or NetCDF4/HDF5 (\x89HDF)
             for engine in ("netcdf4", "h5netcdf", "scipy"):
                 try:
                     ds = xr.open_dataset(nc_path, engine=engine)
-                    self._logger.debug(
-                        f"  Opened {nc_path.name} with engine='{engine}'"
-                    )
+                    self._logger.debug(f"  Opened {nc_path.name} with engine='{engine}'")
                     break
                 except Exception:
                     continue
-
             if ds is None:
                 self._logger.error(
-                    f"Cannot open {nc_path.name}. "
-                    f"Magic bytes: {magic.hex()}. "
+                    f"Cannot open {nc_path.name}. Magic bytes: {magic.hex()}. "
                     "Run: pip install netcdf4 h5netcdf cfgrib eccodes\n"
                     "Or delete the file and re-run to re-download it."
                 )
                 return None
 
         try:
-            # Convert to DataFrame — xarray handles the cartesian product
             df = ds.to_dataframe().reset_index()
             ds.close()
-
-            # Rename columns: CDS short name → readable name
             df = df.rename(columns=VARIABLE_RENAME)
+            df = df.rename(columns={"latitude": "latitude", "longitude": "longitude",
+                                    "valid_time": "time"})
 
-            # Rename coordinate columns if present
-            df = df.rename(columns={
-                "latitude": "latitude",
-                "longitude": "longitude",
-                "valid_time": "time",
-            })
-
-            # Ensure time column is UTC datetime
             if "time" in df.columns:
                 df["time"] = pd.to_datetime(df["time"], utc=True)
             elif "valid_time" in df.columns:
                 df["time"] = pd.to_datetime(df["valid_time"], utc=True)
                 df = df.drop(columns=["valid_time"], errors="ignore")
 
-            # ── Unit conversions ─────────────────────────────────────────
-            # Temperature: Kelvin → Celsius
             for col in ["temperature_2m", "dewpoint_2m"]:
                 if col in df.columns:
                     df[col] = df[col] - 273.15
 
-            # Precipitation: metres → millimetres
             for col in ["total_precipitation", "convective_precipitation"]:
                 if col in df.columns:
                     df[col] = df[col] * 1000.0
-                    # Set negative (floating point noise) to 0
                     df.loc[df[col] < 0, col] = 0.0
 
-            # Pressure: Pa → hPa
             for col in ["mslp", "surface_pressure"]:
                 if col in df.columns:
                     df[col] = df[col] / 100.0
 
-            # ── Derive wind speed and direction ──────────────────────────
             if "wind_u_10m" in df.columns and "wind_v_10m" in df.columns:
-                df["wind_speed_10m"] = np.sqrt(
-                    df["wind_u_10m"] ** 2 + df["wind_v_10m"] ** 2
-                )
+                df["wind_speed_10m"] = np.sqrt(df["wind_u_10m"]**2 + df["wind_v_10m"]**2)
                 df["wind_dir_10m"] = (
-                    np.degrees(
-                        np.arctan2(-df["wind_u_10m"], -df["wind_v_10m"])
-                    ) % 360
+                    np.degrees(np.arctan2(-df["wind_u_10m"], -df["wind_v_10m"])) % 360
                 )
 
-            # ── Drop expver column if present (CDS metadata artifact) ────
-            df = df.drop(
-                columns=[c for c in ["expver", "number"] if c in df.columns]
-            )
+            df = df.drop(columns=[c for c in ["expver", "number"] if c in df.columns])
 
-            # ── Sort ─────────────────────────────────────────────────────
-            sort_cols = [c for c in ["time", "latitude", "longitude"]
-                        if c in df.columns]
+            sort_cols = [c for c in ["time", "latitude", "longitude"] if c in df.columns]
             df = df.sort_values(sort_cols).reset_index(drop=True)
 
-            self._logger.debug(
-                f"  Parsed {nc_path.name}: {len(df):,} rows"
-            )
+            self._logger.debug(f"  Parsed {nc_path.name}: {len(df):,} rows")
             return df
 
         except Exception as exc:
@@ -431,11 +340,11 @@ class ERA5Collector:
     """
     Orchestrates the full ERA5 data collection pipeline.
 
-    Pipeline (per month)
-    ─────────────────────
-    1. Download NetCDF from CDS → raw/
+    Pipeline (per month, submitted CONCURRENTLY)
+    ─────────────────────────────────────────────
+    1. Download MONTHLY NetCDF from CDS → raw/     (threaded, I/O-bound)
     2. Parse NetCDF → DataFrame
-    3. Save monthly cleaned CSV → cleaned/
+    3. Save cleaned monthly CSV → cleaned/
 
     After all months:
     4. Write metadata.json
@@ -457,32 +366,25 @@ class ERA5Collector:
         self._bbox = self._cfg["location"]["bounding_box"]
         self._start_date, self._end_date = get_date_range()
 
-        # ── CDS API client ───────────────────────────────────────────────
         cds_key = self._cfg["api_keys"].get("cds_api_key", "")
         if not cds_key or cds_key == "YOUR_CDS_API_KEY_HERE":
             raise ValueError(
-                "CDS API key not configured. "
-                "Set api_keys.cds_api_key in config/config.yaml.\n"
+                "CDS API key not configured. Set api_keys.cds_api_key in config/config.yaml.\n"
                 "Format: 'UID:API-KEY'\n"
                 "Get your key at: https://cds.climate.copernicus.eu → Profile"
             )
+        self._cds_url = "https://cds.climate.copernicus.eu/api"
+        self._cds_key = cds_key
 
-        # Inject key programmatically — no need for ~/.cdsapirc file
-        self._cds_client = cdsapi.Client(
-            url="https://cds.climate.copernicus.eu/api",
-            key=cds_key,
-            quiet=True,
-            verify=True,
+        self._max_concurrent = int(
+            self._src_cfg.get("max_concurrent_downloads", DEFAULT_MAX_CONCURRENT)
         )
 
         self._downloader = ERA5Downloader(
-            cds_client=self._cds_client,
-            raw_dir=self._raw_dir,
-            dataset=self._src_cfg["dataset"],
-            product_type=self._src_cfg["product_type"],
-            variables=self._src_cfg["variables"],
-            bbox=self._bbox,
-            logger=self._logger,
+            cds_url=self._cds_url, cds_key=self._cds_key,
+            raw_dir=self._raw_dir, dataset=self._src_cfg["dataset"],
+            product_type=self._src_cfg["product_type"], variables=self._src_cfg["variables"],
+            bbox=self._bbox, logger=self._logger,
         )
         self._parser = ERA5Parser(bbox=self._bbox, logger=self._logger)
 
@@ -492,126 +394,126 @@ class ERA5Collector:
 
     def run(self) -> None:
         self._logger.info("=" * 70)
-        self._logger.info("ERA5 Reanalysis Collector — START")
-        self._logger.info(
-            f"Location  : {self._loc['district']}, {self._loc['state']}"
-        )
+        self._logger.info("ERA5 Reanalysis Collector — START (monthly + concurrent)")
+        self._logger.info(f"Location  : {self._loc['district']}, {self._loc['state']}")
         self._logger.info(
             f"Bbox      : N={self._bbox['lat_max']} S={self._bbox['lat_min']} "
             f"W={self._bbox['lon_min']} E={self._bbox['lon_max']}"
         )
-        self._logger.info(
-            f"Period    : {self._start_date} → {self._end_date}"
-        )
-        self._logger.info(
-            f"Variables : {self._src_cfg['variables']}"
-        )
+        self._logger.info(f"Period    : {self._start_date} → {self._end_date}")
+        self._logger.info(f"Variables : {self._src_cfg['variables']}")
+        self._logger.info(f"Concurrent downloads: {self._max_concurrent}")
         self._logger.info("=" * 70)
 
-        months = list(self._iter_months())
-        total = len(months)
+        year_months = list(self._iter_year_months())
+        total_months = len(year_months)
+        self._logger.info(f"Plan: {total_months} monthly request(s), {self._max_concurrent} at a time")
+
         processed = 0
         skipped = 0
         total_records = 0
         total_missing: dict[str, int] = {}
 
-        for i, (year, month) in enumerate(
-            tqdm(months, desc="ERA5 months", unit="month"), start=1
-        ):
-            self._logger.info(
-                f"[{i}/{total}] {year}-{month:02d}"
-            )
+        # ── Concurrent download + parse + save, per month ──────────────
+        with ThreadPoolExecutor(max_workers=self._max_concurrent) as executor:
+            futures = {
+                executor.submit(self._process_month, year, month): (year, month)
+                for year, month in year_months
+            }
 
-            # Step 1: Download
-            nc_path = self._downloader.download_month(year, month)
-            if nc_path is None:
-                skipped += 1
-                continue
+            with tqdm(total=total_months, desc="ERA5 months", unit="month") as pbar:
+                for future in as_completed(futures):
+                    year, month = futures[future]
+                    try:
+                        result = future.result()
+                    except Exception as exc:
+                        self._logger.error(f"  {year}-{month:02d} failed with exception: {exc}")
+                        result = None
 
-            # Step 2: Parse
-            df = self._parser.parse(nc_path)
-            if df is None or df.empty:
-                self._logger.warning(
-                    f"  Parse returned empty for {year}-{month:02d}. Skipping."
-                )
-                skipped += 1
-                continue
+                    if result is None:
+                        skipped += 1
+                    else:
+                        n_recs, missing = result
+                        processed += 1
+                        total_records += n_recs
+                        for col, n in missing.items():
+                            total_missing[col] = total_missing.get(col, 0) + n
 
-            # Step 3: Save cleaned CSV
-            csv_path = self._save_cleaned_month(df, year, month)
+                    pbar.update(1)
 
-            # Accumulate stats
-            total_records += len(df)
-            for col in df.select_dtypes(include="number").columns:
-                n_miss = int(df[col].isna().sum())
-                total_missing[col] = total_missing.get(col, 0) + n_miss
-
-            processed += 1
-            self._logger.info(
-                f"  Done: {len(df):,} records → {csv_path.name}"
-            )
-
-            time.sleep(POLITENESS_DELAY)
-
-        # Step 4: Metadata
         self._write_metadata(total_records, total_missing)
 
-        # Summary
         self._logger.info("=" * 70)
         self._logger.info("ERA5 Reanalysis Collector — COMPLETE")
-        self._logger.info(f"Total months  : {total}")
-        self._logger.info(f"Processed     : {processed}")
-        self._logger.info(f"Skipped       : {skipped}")
-        self._logger.info(f"Total records : {total_records:,}")
+        self._logger.info(f"Total months   : {total_months}")
+        self._logger.info(f"Processed      : {processed}")
+        self._logger.info(f"Skipped        : {skipped}")
+        self._logger.info(f"Total records  : {total_records:,}")
+        if skipped:
+            self._logger.warning(
+                f"{skipped} month(s) failed — check the log above for CDS error details "
+                f"and re-run (cached months will be skipped automatically)."
+            )
         self._logger.info("=" * 70)
+
+    # ──────────────────────────────────────────────────────────────────────
+    #  PER-MONTH WORKER  (runs inside a thread)
+    # ──────────────────────────────────────────────────────────────────────
+
+    def _process_month(self, year: int, month: int) -> Optional[tuple[int, dict]]:
+        """
+        Download one month, parse it, save cleaned CSV.
+        Runs inside a worker thread — returns (n_records, missing_value_counts)
+        or None on failure.
+        """
+        nc_path = self._downloader.download_month(year, month)
+        if nc_path is None:
+            return None
+
+        df = self._parser.parse(nc_path)
+        if df is None or df.empty:
+            self._logger.warning(f"  Parse returned empty for {year}-{month:02d}. Skipping.")
+            return None
+
+        csv_path = self._clean_dir / f"era5_mandi_{year}{month:02d}_cleaned.csv"
+        df.to_csv(csv_path, index=False)
+        size_kb = csv_path.stat().st_size / 1024
+        self._logger.info(
+            f"  Saved CSV: {csv_path.name} ({size_kb:.0f} KB, {len(df):,} rows)"
+        )
+
+        missing: dict[str, int] = {}
+        for col in df.select_dtypes(include="number").columns:
+            missing[col] = int(df[col].isna().sum())
+
+        return len(df), missing
 
     # ──────────────────────────────────────────────────────────────────────
     #  PRIVATE HELPERS
     # ──────────────────────────────────────────────────────────────────────
 
-    def _iter_months(self) -> Iterator[tuple[int, int]]:
-        """Yield (year, month) tuples for the configured date range."""
-        cur = date(self._start_date.year, self._start_date.month, 1)
-        end = date(self._end_date.year, self._end_date.month, 1)
-        while cur <= end:
-            yield cur.year, cur.month
-            if cur.month == 12:
-                cur = date(cur.year + 1, 1, 1)
+    def _iter_year_months(self) -> Iterator[tuple[int, int]]:
+        """
+        Yield (year, month) for every calendar month inside
+        [start_date, end_date], inclusive.
+        """
+        start_year, start_month = self._start_date.year, self._start_date.month
+        end_year, end_month = self._end_date.year, self._end_date.month
+
+        year, month = start_year, start_month
+        while (year, month) <= (end_year, end_month):
+            yield year, month
+            if month == 12:
+                year, month = year + 1, 1
             else:
-                cur = date(cur.year, cur.month + 1, 1)
+                month += 1
 
-    def _save_cleaned_month(
-        self, df: pd.DataFrame, year: int, month: int
-    ) -> Path:
-        """Save one month's cleaned DataFrame as CSV."""
-        csv_path = (
-            self._clean_dir / f"era5_mandi_{year}{month:02d}_cleaned.csv"
-        )
-        df.to_csv(csv_path, index=False)
-        size_kb = csv_path.stat().st_size / 1024
-        self._logger.info(
-            f"  Saved CSV: {csv_path.name} ({size_kb:.0f} KB)"
-        )
-        return csv_path
-
-    def _write_metadata(
-        self,
-        total_records: int,
-        total_missing: dict[str, int],
-    ) -> None:
+    def _write_metadata(self, total_records: int, total_missing: dict[str, int]) -> None:
         dummy_df = pd.DataFrame()
-        cleaned_csvs = sorted(
-            self._clean_dir.glob("era5_mandi_*_cleaned.csv")
-        )
-        cleaned_path = (
-            cleaned_csvs[-1]
-            if cleaned_csvs
-            else self._clean_dir / "no_data.csv"
-        )
+        cleaned_csvs = sorted(self._clean_dir.glob("era5_mandi_*_cleaned.csv"))
+        cleaned_path = cleaned_csvs[-1] if cleaned_csvs else self._clean_dir / "no_data.csv"
         raw_ncs = sorted(self._raw_dir.glob("era5_mandi_*.nc"))
-        raw_path = (
-            raw_ncs[0] if raw_ncs else self._raw_dir / "no_data.nc"
-        )
+        raw_path = raw_ncs[0] if raw_ncs else self._raw_dir / "no_data.nc"
 
         meta = write_metadata(
             source_dir=self._source_dir,
@@ -627,23 +529,18 @@ class ERA5Collector:
                 "variables_requested": self._src_cfg["variables"],
                 "variables_derived": ["wind_speed_10m", "wind_dir_10m"],
                 "unit_conversions": {
-                    "temperature": "K → °C",
-                    "precipitation": "m → mm",
-                    "pressure": "Pa → hPa",
+                    "temperature": "K → °C", "precipitation": "m → mm", "pressure": "Pa → hPa",
                 },
                 "bounding_box": self._bbox,
                 "total_records": total_records,
                 "missing_values_summary": total_missing,
                 "start_date": str(self._start_date),
                 "end_date": str(self._end_date),
+                "download_strategy": "monthly chunks, concurrent (see module docstring)",
+                "max_concurrent_downloads": self._max_concurrent,
             },
         )
         self._logger.info(f"Metadata written: {meta}")
-
-
-# ══════════════════════════════════════════════════════════════
-#  ENTRY POINT
-# ══════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
     collector = ERA5Collector()

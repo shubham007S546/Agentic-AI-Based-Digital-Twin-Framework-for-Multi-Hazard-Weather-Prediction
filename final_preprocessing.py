@@ -824,6 +824,13 @@ def time_block_undersample(
 
     X_bal = X_train.loc[final_mask].reset_index(drop=True)
     y_bal = y_train.loc[final_mask].reset_index(drop=True)
+    # Carried through so downstream CV can split by whole BLOCK instead of
+    # raw row position. A plain row-position time-series split can slice
+    # straight through the middle of one storm's block -- neighbouring
+    # hours of the SAME event are nearly identical, so a model 'validates'
+    # on what's essentially a copy of its own training data, producing an
+    # artificially perfect CV score that collapses on real validation data.
+    y_bal["block_id"] = block_id.loc[final_mask].reset_index(drop=True).values
 
     drop_now = [c for c in RARE_EVENT_DROP_COLS if c in X_bal.columns]
     if drop_now:
