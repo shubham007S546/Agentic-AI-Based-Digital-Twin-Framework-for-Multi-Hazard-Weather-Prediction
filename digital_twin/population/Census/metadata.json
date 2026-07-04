@@ -1,0 +1,32 @@
+[
+  {
+    "dataset_name": "District Census Handbook Mandi 2011 - Part A (Village & Town Directory)",
+    "source_url": "https://censusindia.gov.in/nada/index.php/catalog/480/download/1568/DH_2011_0205_PART_A_DCHB_MANDI.pdf",
+    "download_date": "2026-07-04T07:16:40.402793+00:00",
+    "district": "Mandi",
+    "file_name": "mandi_mandi_dchb_part_a_village_town_directory.pdf",
+    "file_format": "pdf",
+    "file_size_bytes": 13929192,
+    "num_records": null,
+    "cleaned_file": null,
+    "last_updated": null,
+    "checksum_sha256": "f8274db7484a30e2817b9fe14c0e9651497e801de48491212b8d4ae7f29ab510",
+    "status": "success",
+    "error": null
+  },
+  {
+    "dataset_name": "District Census Handbook Mandi 2011 - Part B (Primary Census Abstract)",
+    "source_url": "https://censusindia.gov.in/nada/index.php/catalog/481/download/1572/DH_2011_0205_PART_B_DCHB_MANDI.pdf",
+    "download_date": "2026-07-04T07:22:10.209612+00:00",
+    "district": "Mandi",
+    "file_name": "mandi_mandi_dchb_part_b_primary_census_abstract.pdf",
+    "file_format": "pdf",
+    "file_size_bytes": 8315091,
+    "num_records": null,
+    "cleaned_file": null,
+    "last_updated": null,
+    "checksum_sha256": "0417e13a3a7351049854bd599c2886e152ef7907b6baf4587237f4dc17f69d50",
+    "status": "success",
+    "error": null
+  }
+]

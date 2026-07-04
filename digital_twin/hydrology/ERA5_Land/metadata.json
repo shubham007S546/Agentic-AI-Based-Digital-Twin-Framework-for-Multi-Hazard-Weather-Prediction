@@ -1,0 +1,116 @@
+{
+  "dataset": "derived-era5-land-daily-statistics",
+  "years": {
+    "2011": {
+      "status": "failed",
+      "updated_at": "2026-07-04T13:13:02.683408"
+    },
+    "2006": {
+      "status": "failed",
+      "updated_at": "2026-07-04T13:13:02.867237"
+    },
+    "2005": {
+      "status": "failed",
+      "updated_at": "2026-07-04T13:13:03.053411"
+    },
+    "2010": {
+      "status": "failed",
+      "updated_at": "2026-07-04T13:13:03.243572"
+    },
+    "2009": {
+      "status": "failed",
+      "updated_at": "2026-07-04T13:13:03.836050"
+    },
+    "2012": {
+      "status": "failed",
+      "updated_at": "2026-07-04T13:13:04.727878"
+    },
+    "2014": {
+      "status": "failed",
+      "updated_at": "2026-07-04T13:13:36.007174"
+    },
+    "2016": {
+      "status": "failed",
+      "updated_at": "2026-07-04T13:13:36.021015"
+    },
+    "2019": {
+      "status": "failed",
+      "updated_at": "2026-07-04T13:13:37.091743"
+    },
+    "2018": {
+      "status": "failed",
+      "updated_at": "2026-07-04T13:13:37.278738"
+    },
+    "2017": {
+      "status": "failed",
+      "updated_at": "2026-07-04T13:13:37.465096"
+    },
+    "2020": {
+      "status": "failed",
+      "updated_at": "2026-07-04T13:13:38.053943"
+    },
+    "2015": {
+      "status": "failed",
+      "updated_at": "2026-07-04T13:13:38.432855"
+    },
+    "2021": {
+      "status": "failed",
+      "updated_at": "2026-07-04T13:14:09.284963"
+    },
+    "2023": {
+      "status": "failed",
+      "updated_at": "2026-07-04T13:14:10.955182"
+    },
+    "2022": {
+      "status": "failed",
+      "updated_at": "2026-07-04T13:14:11.163953"
+    },
+    "2024": {
+      "status": "failed",
+      "updated_at": "2026-07-04T13:14:13.932732"
+    },
+    "mandi:2005": {
+      "district": "mandi",
+      "year": 2005,
+      "status": "failed",
+      "updated_at": "2026-07-04T18:11:45.286667"
+    },
+    "mandi:2012": {
+      "district": "mandi",
+      "year": 2012,
+      "status": "failed",
+      "updated_at": "2026-07-04T18:11:49.557516"
+    },
+    "mandi:2011": {
+      "district": "mandi",
+      "year": 2011,
+      "status": "failed",
+      "updated_at": "2026-07-04T18:11:50.837485"
+    },
+    "mandi:2006": {
+      "district": "mandi",
+      "year": 2006,
+      "status": "failed",
+      "updated_at": "2026-07-04T18:11:51.571538"
+    },
+    "mandi:2016": {
+      "district": "mandi",
+      "year": 2016,
+      "status": "failed",
+      "updated_at": "2026-07-04T18:13:10.510653"
+    },
+    "mandi:2013": {
+      "district": "mandi",
+      "year": 2013,
+      "status": "failed",
+      "updated_at": "2026-07-04T18:13:10.532651"
+    },
+    "mandi:2017": {
+      "district": "mandi",
+      "year": 2017,
+      "status": "failed",
+      "updated_at": "2026-07-04T18:13:37.964843"
+    }
+  },
+  "last_updated": "2026-07-04T18:13:37.964843"
+}
