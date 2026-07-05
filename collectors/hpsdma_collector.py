@@ -9,6 +9,23 @@ No API is available for this source, so reports are discovered by crawling
 the public HPSDMA website (https://hpsdma.nic.in) and scraping PDF links
 from its "Reports" section pages.
 
+NEW IN THIS VERSION — Wayback Machine fallback
+------------------------------------------------
+hpsdma.nic.in has been confirmed unreachable from multiple independent
+networks (home broadband, mobile data, college wifi) with a TLS handshake
+failure (ERR_CONNECTION_RESET / schannel handshake failure) that also
+reproduces in a plain, unmodified browser. This rules out anything
+fixable client-side (TLS fingerprinting, IPv4 pinning, headers) — the
+block is happening before any HTTP-layer code runs, most likely a
+server-side WAF or network-level block against the client's IP range.
+
+Rather than spinning forever on that, this version adds a Wayback Machine
+fallback: if every live-site entry URL fails, the script queries
+web.archive.org's CDX API for archived snapshots of PDFs under the
+hpsdma.nic.in domain and downloads those instead. This is a genuinely
+different code path (talks to archive.org, not hpsdma.nic.in), so it is
+unaffected by whatever is blocking the live site.
+
 Behaviour highlights
 ---------------------
 - Reads all settings from `config/config.yaml` (paths, HTTP/retry policy,
@@ -17,9 +34,11 @@ Behaviour highlights
   to a shallow depth, collecting `.pdf` links and tagging each with a year
   (2005-2025) parsed from the link text/URL where possible.
 - If the HPSDMA website is unreachable (DNS failure, timeout, 4xx/5xx after
-  retries), the failure is logged and any partially-discovered links plus
-  the entry URLs are written to a `pending_retry.json` queue for a later
-  run — the script exits cleanly instead of crashing.
+  retries), falls back to querying the Wayback Machine for archived PDFs
+  of the same domain before giving up. If that also finds nothing, the
+  failure is logged and any partially-discovered links plus the entry URLs
+  are written to a `pending_retry.json` queue for a later run — the script
+  exits cleanly instead of crashing.
 - Downloads are streamed to disk, skip files that already exist, retry
   transient failures with exponential backoff, and are verified by file
   size before being marked complete.
@@ -32,15 +51,18 @@ Directory layout produced under `datasets/digital_twin/disaster_history/HPSDMA/`
     metadata.json   manifest of every discovered/downloaded report
 
 Modular functions:
-    fetch_report_links()  -> discover report PDF links from the website
-    download_report()     -> download a single PDF with retry + skip logic
-    save_metadata()        -> persist the manifest to metadata.json
-    main()                  -> orchestrate the full run
+    fetch_report_links()   -> discover report PDF links from the live website
+    fetch_wayback_links()   -> discover archived report PDF links via Wayback CDX API
+    download_report()       -> download a single PDF with retry + skip logic
+    download_from_wayback() -> download a single PDF from a Wayback Machine snapshot
+    save_metadata()          -> persist the manifest to metadata.json
+    main()                    -> orchestrate the full run
 
 Usage:
     python hpsdma_collector.py
     python hpsdma_collector.py --config config/config.yaml -v
     python hpsdma_collector.py --retry-only        # only re-attempt the pending queue
+    python hpsdma_collector.py --wayback-only       # skip live site, go straight to Wayback fallback
 """
 
 from __future__ import annotations
@@ -108,6 +130,17 @@ USER_AGENT = (
     "+research-data-collector; contact: project-owner)"
 )
 
+# Wayback Machine CDX API — used as a fallback data source when the live
+# hpsdma.nic.in site is unreachable. This talks to archive.org, a totally
+# different server, so it is unaffected by whatever is blocking the live
+# site (confirmed network-level TLS handshake failure, reproduced across
+# home broadband, mobile data, and college wifi, and in a plain browser).
+WAYBACK_CDX_API = "http://web.archive.org/cdx/search/cdx"
+WAYBACK_DOMAIN_PREFIXES = (
+    "hpsdma.nic.in",
+    "hpsdma.nic.in/writereaddata",
+)
+
 logger = logging.getLogger("hpsdma_collector")
 
 
@@ -128,6 +161,7 @@ class ReportLink:
     source_page: str | None = None
     downloaded_at: str | None = None
     error: str | None = None
+    source: str = "live"                # "live" or "wayback" -- provenance of the link
 
 
 # --------------------------------------------------------------------------- #
@@ -234,6 +268,8 @@ def get_hpsdma_settings(config: dict[str, Any]) -> dict[str, Any]:
         "chunk_size": int(download_cfg.get("chunk_size_bytes", 1_048_576)),
         "min_year": int(hpsdma_cfg.get("min_year", MIN_YEAR)),
         "max_year": int(hpsdma_cfg.get("max_year", MAX_YEAR)),
+        "wayback_enabled": bool(hpsdma_cfg.get("wayback_fallback_enabled", True)),
+        "wayback_timeout": int(hpsdma_cfg.get("wayback_timeout_seconds", 30)),
     }
 
 
@@ -326,6 +362,13 @@ def _force_curl_cffi_ipv4(session: Any) -> None:
 # fingerprint rather than rejecting automated clients outright -- rotating
 # to a different real-browser fingerprint on retry is often all it takes,
 # with no code/config changes needed beyond trying the next one in line.
+#
+# NOTE: on hpsdma.nic.in specifically, this has been confirmed NOT to be
+# the issue -- all fingerprints below fail identically with a TLS handshake
+# reset, and the same reset reproduces in a plain, unmodified browser on
+# three independent networks. Kept here because it's still valid general
+# defence-in-depth for other .nic.in/.gov.in sources that ARE fingerprint-
+# sensitive; it's just not what's wrong with HPSDMA right now.
 CURL_CFFI_IMPERSONATE_CHAIN = ("chrome124", "chrome120", "edge101", "safari17_2_ios")
 
 
@@ -354,49 +397,15 @@ def build_session_chain(
     """
     Build an ordered chain of (label, session) pairs to rotate through on retry.
 
-    Government/NIC-hosted sites (like hpsdma.nic.in) commonly run WAF
-    protection that resets connections (ConnectionResetError / WinError
-    10054 / curl "Recv failure: Connection was reset") for automated
-    clients. This can happen for a few different reasons, each addressed
-    by a different link in this chain:
-
-    1. Header-level fingerprinting -- fixed by sending a realistic browser
-       header set (done below for every session in the chain).
-    2. TLS/HTTP2 handshake fingerprinting (JA3/JA4) -- headers don't help
-       here, since the block happens before any HTTP data is exchanged.
-       `curl_cffi` wraps curl-impersonate to reproduce a real browser's
-       TLS/HTTP2 fingerprint. Critically, a WAF may only be blocking *one
-       specific* fingerprint (e.g. "chrome124") rather than all automated
-       traffic -- if a request hangs for the full timeout and then reports
-       a reset, that's the signature of a silent black-hole on that exact
-       fingerprint. Rotating to a different real-browser fingerprint
-       (chrome120, edge101, an iOS Safari profile, ...) on the next retry
-       attempt is often enough to get through without changing anything
-       else about the request.
-    3. IPv6 route/handshake resets -- some NIC servers advertise IPv6
-       addresses that reset the connection immediately even when headers
-       and TLS fingerprint are otherwise fine. `force_ipv4` (on by default)
-       pins DNS resolution/connection to IPv4 for every session in the
-       chain, per `_force_requests_ipv4_resolution` / `_force_curl_cffi_ipv4`.
-    4. Network-level TLS handshake blocking (ISP/router/security-software,
-       e.g. SNI-based filtering) -- none of the above help here, since the
-       block happens *before* any of this script's code runs at all (this
-       is confirmed by the same failure occurring with the OS's own native
-       curl/Schannel, completely outside Python). The only way around this
-       is routing through a different network path -- set `proxies` (from
-       `digital_twin_sources.hpsdma.proxies` in config.yaml) to an HTTP(S)
-       proxy or a local VPN client's proxy endpoint, and every session in
-       the chain will use it.
-
-    The final link in the chain is always a plain `requests.Session`
-    (optionally with `LegacyTLSAdapter` for older server TLS configs), so
-    the script still works even if curl_cffi isn't installed or every
-    impersonated fingerprint is blocked.
-
-    Returns:
-        A non-empty list of (label, session) tuples, most-preferred first.
-        Callers should cycle through this list across retry attempts
-        rather than reusing a single session for every attempt.
+    See module docstring: hpsdma.nic.in has been confirmed to fail at the
+    TLS handshake stage across three independent networks and in a plain
+    browser, meaning none of the tricks below (fingerprint rotation, IPv4
+    pinning) will fix reachability for this specific source. They remain
+    here as-is because they're harmless and may still help other .nic.in
+    sources this project talks to. For HPSDMA itself, `proxies` (routing
+    around the network-level block) or the Wayback Machine fallback in
+    `fetch_wayback_links` / `download_from_wayback` are the only paths
+    that have a real chance of working.
     """
     proxies = proxies or {}
     headers = {
@@ -552,7 +561,7 @@ def fetch_page(
 
 
 # --------------------------------------------------------------------------- #
-# Discovery
+# Discovery (live site)
 # --------------------------------------------------------------------------- #
 def _looks_like_report_link(href: str, text: str) -> bool:
     """Heuristic: does this link plausibly point at an annual/disaster report?"""
@@ -597,7 +606,7 @@ def fetch_report_links(
     max_year: int,
 ) -> tuple[list[ReportLink], bool]:
     """
-    Discover HPSDMA annual disaster report PDF links.
+    Discover HPSDMA annual disaster report PDF links from the LIVE site.
 
     Crawls each entry URL (and, up to `crawl_depth` hops, same-domain pages
     linked from it whose link text looks report-related) collecting `.pdf`
@@ -606,7 +615,8 @@ def fetch_report_links(
     Returns:
         A tuple of (discovered_reports, site_reachable). `site_reachable` is
         False only when *every* entry URL failed to load at all, which the
-        caller should treat as "the HPSDMA website is currently unavailable".
+        caller should treat as "the HPSDMA website is currently unavailable"
+        and fall back to `fetch_wayback_links`.
     """
     visited_pages: set[str] = set()
     discovered: dict[str, ReportLink] = {}  # keyed by absolute PDF URL, dedups
@@ -663,6 +673,7 @@ def fetch_report_links(
                             year=year,
                             filename=_safe_filename(title, absolute_url, year),
                             source_page=page_url,
+                            source="live",
                         )
             elif depth < crawl_depth and _looks_like_report_link(absolute_url, text):
                 next_hop_candidates.append(absolute_url)
@@ -675,8 +686,101 @@ def fetch_report_links(
         discovered.values(),
         key=lambda r: (r.year is None, r.year or 0, r.title),
     )
-    logger.info("Discovery complete: %d candidate report link(s) found.", len(reports))
+    logger.info("Live-site discovery complete: %d candidate report link(s) found.", len(reports))
     return reports, any_entry_reachable
+
+
+# --------------------------------------------------------------------------- #
+# Discovery (Wayback Machine fallback)
+# --------------------------------------------------------------------------- #
+def _query_wayback_cdx(
+    url_prefix: str,
+    *,
+    timeout: int,
+    limit: int = 1000,
+) -> list[dict[str, str]]:
+    """
+    Query the Wayback Machine CDX API for archived captures under a URL prefix.
+
+    Never raises -- network problems here are logged and treated as "no
+    results", since this fallback should degrade gracefully too (it would
+    be ironic for the *fallback* to crash the run).
+    """
+    params = {
+        "url": url_prefix,
+        "matchType": "prefix",
+        "output": "json",
+        "filter": "statuscode:200",
+        "collapse": "urlkey",
+        "limit": limit,
+    }
+    try:
+        resp = requests.get(WAYBACK_CDX_API, params=params, timeout=timeout)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as exc:
+        logger.warning("Wayback CDX query failed for prefix '%s': %s", url_prefix, exc)
+        return []
+
+    if not data:
+        return []
+
+    fields, *rows = data
+    return [dict(zip(fields, row)) for row in rows]
+
+
+def fetch_wayback_links(
+    *,
+    timeout: int,
+    min_year: int,
+    max_year: int,
+) -> list[ReportLink]:
+    """
+    Discover archived HPSDMA report PDFs via the Wayback Machine, for use
+    when the live site is unreachable.
+
+    This talks only to web.archive.org (a different server entirely from
+    hpsdma.nic.in), so it is unaffected by the TLS-handshake-level block
+    confirmed against the live site.
+
+    Returns:
+        A list of ReportLink objects with `source="wayback"`, pointing at
+        `https://web.archive.org/web/<timestamp>/<original_url>` -- these
+        are downloaded directly from archive.org's replay system, not from
+        hpsdma.nic.in.
+    """
+    discovered: dict[str, ReportLink] = {}
+
+    for prefix in WAYBACK_DOMAIN_PREFIXES:
+        logger.info("Querying Wayback Machine CDX for prefix: %s", prefix)
+        hits = _query_wayback_cdx(prefix, timeout=timeout)
+        pdf_hits = [h for h in hits if h.get("original", "").lower().endswith(".pdf")]
+        logger.info("  -> %d total capture(s), %d are PDFs", len(hits), len(pdf_hits))
+
+        for hit in pdf_hits:
+            original_url = hit["original"]
+            if original_url in discovered:
+                continue
+            timestamp = hit["timestamp"]
+            wayback_url = f"https://web.archive.org/web/{timestamp}/{original_url}"
+            parsed = urlparse(original_url)
+            title = Path(parsed.path).stem
+            year = _extract_year(title, original_url, min_year, max_year)
+            discovered[original_url] = ReportLink(
+                url=wayback_url,
+                title=title,
+                year=year,
+                filename=_safe_filename(title, original_url, year),
+                source_page=f"wayback-cdx:{prefix}",
+                source="wayback",
+            )
+
+    reports = sorted(
+        discovered.values(),
+        key=lambda r: (r.year is None, r.year or 0, r.title),
+    )
+    logger.info("Wayback fallback discovery complete: %d archived report(s) found.", len(reports))
+    return reports
 
 
 # --------------------------------------------------------------------------- #
@@ -704,7 +808,8 @@ def download_report(
     overwrite: bool = False,
 ) -> ReportLink:
     """
-    Download a single report PDF to `dest_dir`, with retry and skip-if-exists.
+    Download a single report PDF from the LIVE site to `dest_dir`, with
+    retry and skip-if-exists.
 
     Like `fetch_page`, each retry attempt rotates to the next session in
     `session_chain` so a black-holed TLS fingerprint on one attempt doesn't
@@ -784,6 +889,85 @@ def download_report(
     return report
 
 
+def download_from_wayback(
+    report: ReportLink,
+    dest_dir: Path,
+    *,
+    timeout: int,
+    max_retries: int,
+    backoff_factor: float,
+    chunk_size: int,
+    overwrite: bool = False,
+) -> ReportLink:
+    """
+    Download a single report PDF from a Wayback Machine snapshot URL.
+
+    Simpler than `download_report`: archive.org's replay servers don't need
+    the TLS-fingerprint / IPv4-pinning machinery built for hpsdma.nic.in, a
+    plain `requests` session is sufficient. Retries on network errors and
+    5xx only (archive.org occasionally 5xx's under load); a 404 means the
+    specific snapshot capture is gone and is not retried.
+    """
+    dest_path = dest_dir / report.filename
+
+    if dest_path.exists() and not overwrite:
+        report.status = "skipped"
+        report.size_bytes = dest_path.stat().st_size
+        logger.debug("Already downloaded, skipping: %s", dest_path.name)
+        return report
+
+    tmp_path = dest_path.with_suffix(dest_path.suffix + ".part")
+    last_error: str | None = None
+    session = requests.Session()
+    session.headers.update({"User-Agent": USER_AGENT})
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            with session.get(report.url, stream=True, timeout=timeout) as response:
+                if response.status_code == 404:
+                    report.status = "failed"
+                    report.error = "HTTP 404 (Wayback snapshot no longer available)"
+                    logger.error("Wayback snapshot missing for %s", report.filename)
+                    return report
+
+                if response.status_code != 200:
+                    last_error = f"HTTP {response.status_code}"
+                    logger.warning(
+                        "Attempt %d/%d: %s -> HTTP %s, retrying...",
+                        attempt, max_retries, report.filename, response.status_code,
+                    )
+                    time.sleep(backoff_factor ** attempt)
+                    continue
+
+                with tmp_path.open("wb") as f:
+                    for chunk in response.iter_content(chunk_size=chunk_size):
+                        if chunk:
+                            f.write(chunk)
+
+            tmp_path.rename(dest_path)
+            report.status = "downloaded"
+            report.size_bytes = dest_path.stat().st_size
+            report.sha256 = _sha256_of_file(dest_path)
+            report.downloaded_at = datetime.now(timezone.utc).isoformat()
+            logger.info("Downloaded (via Wayback): %s (%.1f KB)", report.filename, report.size_bytes / 1024)
+            return report
+
+        except requests.exceptions.RequestException as exc:
+            last_error = str(exc)
+            logger.warning("Attempt %d/%d: error downloading %s from Wayback: %s",
+                            attempt, max_retries, report.filename, exc)
+            if attempt < max_retries:
+                time.sleep(backoff_factor ** attempt)
+
+    if tmp_path.exists():
+        tmp_path.unlink(missing_ok=True)
+
+    report.status = "failed"
+    report.error = last_error or "Unknown download error"
+    logger.error("Giving up on %s (Wayback) after %d attempts: %s", report.filename, max_retries, report.error)
+    return report
+
+
 # --------------------------------------------------------------------------- #
 # Metadata / retry-queue persistence
 # --------------------------------------------------------------------------- #
@@ -849,10 +1033,50 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                          help=f"Path to config.yaml (default: {DEFAULT_CONFIG_PATH})")
     parser.add_argument("--retry-only", action="store_true",
                          help="Only re-attempt entry URLs / reports from a previous pending_retry.json.")
+    parser.add_argument("--wayback-only", action="store_true",
+                         help="Skip the live site entirely and go straight to the Wayback Machine fallback.")
     parser.add_argument("--overwrite", action="store_true",
                          help="Re-download reports even if a local file already exists.")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable debug logging.")
     return parser.parse_args(argv)
+
+
+def _download_all(
+    reports: list[ReportLink],
+    raw_dir: Path,
+    *,
+    settings: dict[str, Any],
+    session_chain: list[tuple[str, Any]],
+    overwrite: bool,
+) -> list[ReportLink]:
+    """Download a mixed list of live-site and Wayback-sourced reports."""
+    results: list[ReportLink] = []
+    for report in tqdm(reports, desc="HPSDMA reports", unit="pdf"):
+        if report.source == "wayback":
+            updated = download_from_wayback(
+                report,
+                raw_dir,
+                timeout=settings["wayback_timeout"],
+                max_retries=settings["max_retries"],
+                backoff_factor=settings["backoff_factor"],
+                chunk_size=settings["chunk_size"],
+                overwrite=overwrite,
+            )
+        else:
+            updated = download_report(
+                report,
+                raw_dir,
+                session_chain,
+                timeout=settings["timeout"],
+                max_retries=settings["max_retries"],
+                backoff_factor=settings["backoff_factor"],
+                retry_on_status=settings["retry_on_status"],
+                verify_ssl=settings["verify_ssl"],
+                chunk_size=settings["chunk_size"],
+                overwrite=overwrite,
+            )
+        results.append(updated)
+    return results
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -895,47 +1119,88 @@ def main(argv: list[str] | None = None) -> int:
     logger.info("Portal      : %s", settings["portal_url"])
     logger.info("Raw dir     : %s", raw_dir)
     logger.info("Year range  : %d - %d", settings["min_year"], settings["max_year"])
-    session_chain = build_session_chain(
-        verify_ssl=settings["verify_ssl"],
-        use_curl_cffi=settings["use_curl_cffi"],
-        force_ipv4=settings["force_ipv4"],
-        proxies=settings["proxies"],
-    )
-    logger.info(
-        "HTTP backend chain (rotates per retry attempt): %s",
-        " -> ".join(label for label, _ in session_chain),
-    )
-    logger.info("IPv4-only   : %s", "enabled" if settings["force_ipv4"] else "disabled")
-    logger.info("=" * 70)
 
-    warm_up_session_chain(
-        session_chain, settings["portal_url"], timeout=settings["timeout"], verify_ssl=settings["verify_ssl"]
-    )
+    reports: list[ReportLink] = []
+    site_reachable = False
 
-    entry_urls = list(settings["entry_urls"])
-    if args.retry_only:
-        pending = load_pending_retry(pending_path)
-        entry_urls = pending.get("entry_urls_to_retry", entry_urls) or entry_urls
-        logger.info("Retry-only mode: using %d entry URL(s) from pending queue.", len(entry_urls))
+    if not args.wayback_only:
+        session_chain = build_session_chain(
+            verify_ssl=settings["verify_ssl"],
+            use_curl_cffi=settings["use_curl_cffi"],
+            force_ipv4=settings["force_ipv4"],
+            proxies=settings["proxies"],
+        )
+        logger.info(
+            "HTTP backend chain (rotates per retry attempt): %s",
+            " -> ".join(label for label, _ in session_chain),
+        )
+        logger.info("IPv4-only   : %s", "enabled" if settings["force_ipv4"] else "disabled")
+        logger.info("=" * 70)
 
-    reports, site_reachable = fetch_report_links(
-        entry_urls,
-        session_chain,
-        crawl_depth=settings["crawl_depth"],
-        timeout=settings["timeout"],
-        max_retries=settings["max_retries"],
-        backoff_factor=settings["backoff_factor"],
-        retry_on_status=settings["retry_on_status"],
-        verify_ssl=settings["verify_ssl"],
-        min_year=settings["min_year"],
-        max_year=settings["max_year"],
-    )
+        warm_up_session_chain(
+            session_chain, settings["portal_url"], timeout=settings["timeout"], verify_ssl=settings["verify_ssl"]
+        )
 
-    if not site_reachable:
+        entry_urls = list(settings["entry_urls"])
+        if args.retry_only:
+            pending = load_pending_retry(pending_path)
+            entry_urls = pending.get("entry_urls_to_retry", entry_urls) or entry_urls
+            logger.info("Retry-only mode: using %d entry URL(s) from pending queue.", len(entry_urls))
+
+        reports, site_reachable = fetch_report_links(
+            entry_urls,
+            session_chain,
+            crawl_depth=settings["crawl_depth"],
+            timeout=settings["timeout"],
+            max_retries=settings["max_retries"],
+            backoff_factor=settings["backoff_factor"],
+            retry_on_status=settings["retry_on_status"],
+            verify_ssl=settings["verify_ssl"],
+            min_year=settings["min_year"],
+            max_year=settings["max_year"],
+        )
+    else:
+        session_chain = []  # not used when skipping the live site entirely
+        entry_urls = list(settings["entry_urls"])
+        logger.info("--wayback-only passed: skipping live-site attempt entirely.")
+
+    # ----------------------------------------------------------------- #
+    # Wayback Machine fallback
+    # ----------------------------------------------------------------- #
+    used_wayback = False
+    if (not site_reachable or args.wayback_only) and settings["wayback_enabled"]:
+        if not site_reachable and not args.wayback_only:
+            logger.warning(
+                "HPSDMA website appears to be unavailable (all %d entry URL(s) failed to load). "
+                "Falling back to the Wayback Machine before giving up.",
+                len(entry_urls),
+            )
+        wayback_reports = fetch_wayback_links(
+            timeout=settings["wayback_timeout"],
+            min_year=settings["min_year"],
+            max_year=settings["max_year"],
+        )
+        if wayback_reports:
+            used_wayback = True
+            # Merge: prefer live-discovered links already in `reports`, add
+            # any Wayback-only finds on top (dedup by filename as a proxy
+            # for "same report").
+            existing_filenames = {r.filename for r in reports}
+            for wb_report in wayback_reports:
+                if wb_report.filename not in existing_filenames:
+                    reports.append(wb_report)
+                    existing_filenames.add(wb_report.filename)
+            logger.info(
+                "Wayback fallback contributed %d report(s); total candidate reports now %d.",
+                len(wayback_reports), len(reports),
+            )
+        else:
+            logger.warning("Wayback fallback found no archived PDFs either.")
+
+    if not site_reachable and not used_wayback and not args.wayback_only:
         logger.error(
-            "HPSDMA website appears to be unavailable (all %d entry URL(s) failed to load). "
-            "Saving entry URLs for retry instead of crashing.",
-            len(entry_urls),
+            "HPSDMA website is unavailable and no Wayback Machine snapshots were found. "
+            "Saving entry URLs for retry instead of crashing."
         )
         save_pending_retry(entry_urls, reports, pending_path)
         save_metadata(reports, metadata_path)  # persist whatever was known before, unchanged
@@ -943,31 +1208,21 @@ def main(argv: list[str] | None = None) -> int:
         return 0  # graceful exit, not a crash
 
     if not reports:
-        logger.warning("Site was reachable but no report links were discovered. "
+        logger.warning("No report links were discovered from either the live site or Wayback. "
                         "The page structure may have changed -- consider updating "
                         "REPORT_KEYWORDS / entry_urls in config.")
         save_metadata(reports, metadata_path)
         return 0
 
-    logger.info("Downloading %d discovered report(s)...", len(reports))
-    results: list[ReportLink] = []
+    logger.info("Downloading %d discovered report(s) (%s)...",
+                len(reports), "live + wayback" if used_wayback else "live only")
+    results = _download_all(
+        reports, raw_dir,
+        settings=settings, session_chain=session_chain, overwrite=args.overwrite,
+    )
     counts = {"downloaded": 0, "skipped": 0, "failed": 0}
-
-    for report in tqdm(reports, desc="HPSDMA reports", unit="pdf"):
-        updated = download_report(
-            report,
-            raw_dir,
-            session_chain,
-            timeout=settings["timeout"],
-            max_retries=settings["max_retries"],
-            backoff_factor=settings["backoff_factor"],
-            retry_on_status=settings["retry_on_status"],
-            verify_ssl=settings["verify_ssl"],
-            chunk_size=settings["chunk_size"],
-            overwrite=args.overwrite,
-        )
-        results.append(updated)
-        counts[updated.status] = counts.get(updated.status, 0) + 1
+    for r in results:
+        counts[r.status] = counts.get(r.status, 0) + 1
 
     save_metadata(results, metadata_path)
 
@@ -979,13 +1234,14 @@ def main(argv: list[str] | None = None) -> int:
 
     logger.info("=" * 70)
     logger.info("RUN SUMMARY")
-    logger.info("  Discovered : %d", len(results))
-    logger.info("  Downloaded : %d", counts.get("downloaded", 0))
-    logger.info("  Skipped    : %d (already present)", counts.get("skipped", 0))
-    logger.info("  Failed     : %d", counts.get("failed", 0))
-    logger.info("  Metadata   : %s", metadata_path)
+    logger.info("  Source      : %s", "live + Wayback fallback" if used_wayback else "live site only")
+    logger.info("  Discovered  : %d", len(results))
+    logger.info("  Downloaded  : %d", counts.get("downloaded", 0))
+    logger.info("  Skipped     : %d (already present)", counts.get("skipped", 0))
+    logger.info("  Failed      : %d", counts.get("failed", 0))
+    logger.info("  Metadata    : %s", metadata_path)
     if failed_reports:
-        logger.info("  Retry queue: %s", pending_path)
+        logger.info("  Retry queue : %s", pending_path)
     logger.info("=" * 70)
 
     return 0 if not failed_reports else 2
