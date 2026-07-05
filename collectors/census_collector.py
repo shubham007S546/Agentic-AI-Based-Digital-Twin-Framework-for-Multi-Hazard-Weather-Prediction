@@ -18,41 +18,6 @@ only:
 
 No code changes are required.
 
-Expected ``config.yaml`` shape (all keys optional -- sane defaults are
-used when a key is missing)::
-
-    census:
-      base_dir: datasets/digital_twin/population/Census
-      boundaries_dir: datasets/digital_twin/metadata/boundaries
-      request:
-        timeout: 30
-        retries: 3
-        backoff_factor: 2
-        user_agent: "Mozilla/5.0 (compatible; WeatherDataProjectBot/1.0)"
-        # Set to false only for known .gov.in domains with broken cert
-        # chains (e.g. censusindia.gov.in) -- it disables TLS verification
-        # for every request this collector makes.
-        verify_ssl: true
-      file_types: [".xls", ".xlsx", ".csv", ".pdf", ".zip"]
-      keywords: ["census", "dchb", "village", "district", "population", "2011"]
-      districts:
-        mandi:
-          boundary_file: mandi_district.geojson
-          search_urls:
-            - "https://censusindia.gov.in/nada/index.php/catalog?search=mandi"
-          known_files:
-            - url: "https://example.gov.in/dchb/mandi_dchb.xlsx"
-              filename: "mandi_dchb.xlsx"
-              description: "District Census Handbook - Mandi (2011)"
-        kullu:
-          boundary_file: kullu_district.geojson
-          search_urls: []
-          known_files: []
-        chamba:
-          boundary_file: chamba_district.geojson
-          search_urls: []
-          known_files: []
-
 Run::
 
     python collectors/census_collector.py --config config/config.yaml
@@ -158,11 +123,7 @@ class DownloadResult:
 # --------------------------------------------------------------------------- #
 
 def setup_logging(logs_dir: Path) -> None:
-    """Configure root logger with console + rotating file handlers.
-
-    Args:
-        logs_dir: Directory in which to write ``census_collector.log``.
-    """
+    """Configure root logger with console + rotating file handlers."""
     logs_dir.mkdir(parents=True, exist_ok=True)
     log_path = logs_dir / "census_collector.log"
 
@@ -194,22 +155,7 @@ def setup_logging(logs_dir: Path) -> None:
 # --------------------------------------------------------------------------- #
 
 def load_config(config_path: str) -> Dict[str, Any]:
-    """Load and normalise the census section of ``config.yaml``.
-
-    Missing keys are filled in with sensible defaults so the collector can
-    run even against a minimal config file.
-
-    Args:
-        config_path: Path to the project's ``config.yaml``.
-
-    Returns:
-        A fully-populated configuration dictionary (only the ``census``
-        sub-tree, merged with defaults).
-
-    Raises:
-        FileNotFoundError: If ``config_path`` does not exist.
-        yaml.YAMLError: If the YAML cannot be parsed.
-    """
+    """Load and normalise the census section of ``config.yaml``."""
     path = Path(config_path)
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
@@ -236,12 +182,6 @@ def load_config(config_path: str) -> Dict[str, Any]:
     }
 
     if not merged["request"]["verify_ssl"]:
-        # Several .gov.in sites (censusindia.gov.in included) serve an
-        # incomplete certificate chain that Python's certifi bundle
-        # rejects even though browsers accept it. When the operator has
-        # explicitly opted out of verification via config, silence the
-        # resulting urllib3 InsecureRequestWarning spam rather than
-        # letting it flood the logs on every single request.
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         logger.warning(
             "SSL verification is DISABLED for census requests (request.verify_ssl: "
@@ -265,25 +205,11 @@ def load_config(config_path: str) -> Dict[str, Any]:
 # --------------------------------------------------------------------------- #
 
 def load_boundaries(config: Dict[str, Any]) -> List[DistrictSpec]:
-    """Build a :class:`DistrictSpec` for every configured/discovered district.
-
-    Reads each district's GeoJSON boundary file to pull out any embedded
-    metadata (census codes, names, etc.) that might be present in the
-    feature properties, and merges it with the ``census.districts`` block
-    from ``config.yaml``.
-
-    Args:
-        config: The normalised census config from :func:`load_config`.
-
-    Returns:
-        List of :class:`DistrictSpec` objects, one per district.
-    """
+    """Build a :class:`DistrictSpec` for every configured/discovered district."""
     boundaries_dir = Path(config["boundaries_dir"])
     districts_cfg: Dict[str, Any] = config["districts"]
     specs: List[DistrictSpec] = []
 
-    # If config didn't specify districts explicitly, auto-discover from
-    # any "*_district.geojson" file present in the boundaries directory.
     if not districts_cfg:
         if not boundaries_dir.exists():
             logger.error("Boundaries directory does not exist: %s", boundaries_dir)
@@ -305,7 +231,6 @@ def load_boundaries(config: Dict[str, Any]) -> List[DistrictSpec]:
                 features = geo.get("features", [])
                 if features:
                     properties = features[0].get("properties", {}) or {}
-                    # Try a handful of common property-key spellings.
                     for key in (
                         "censuscode", "census_code", "district_c", "distcode",
                         "dtcode11", "DISTRICT_C", "district_code",
@@ -358,17 +283,7 @@ def _request_with_retries(
     config: Dict[str, Any],
     stream: bool = False,
 ) -> Optional[requests.Response]:
-    """GET a URL with exponential-backoff retries.
-
-    Args:
-        session: Shared requests session.
-        url: Target URL.
-        config: Census config (for timeout/retries/backoff).
-        stream: Whether to stream the response body.
-
-    Returns:
-        The response object on success, or ``None`` if all attempts failed.
-    """
+    """GET a URL with exponential-backoff retries."""
     retries = config["request"]["retries"]
     timeout = config["request"]["timeout"]
     backoff = config["request"]["backoff_factor"]
@@ -397,27 +312,9 @@ def _request_with_retries(
 def discover_sources(
     district: DistrictSpec, config: Dict[str, Any], session: requests.Session
 ) -> List[Tuple[str, str, str]]:
-    """Discover downloadable Census file URLs for a district.
+    """Discover downloadable Census file URLs for a district."""
+    discovered: Dict[str, Tuple[str, str]] = {}
 
-    Combines two sources:
-
-    1. ``known_files`` explicitly listed in ``config.yaml`` (most reliable).
-    2. Links auto-discovered by scraping each of the district's
-       ``search_urls`` (a catalog / listing page) with BeautifulSoup,
-       filtering anchors whose href matches the configured file
-       extensions and/or keywords.
-
-    Args:
-        district: The district being processed.
-        config: Census configuration.
-        session: Shared HTTP session.
-
-    Returns:
-        List of ``(url, filename, description)`` tuples, deduplicated by URL.
-    """
-    discovered: Dict[str, Tuple[str, str]] = {}  # url -> (filename, description)
-
-    # -- 1. Known/static files from config --------------------------------- #
     for entry in district.known_files:
         url = entry.get("url")
         if not url:
@@ -426,7 +323,6 @@ def discover_sources(
         description = entry.get("description", filename)
         discovered[url] = (filename, description)
 
-    # -- 2. Auto-discovery via HTML scraping -------------------------------- #
     file_types = config["file_types"]
     keywords = config["keywords"]
 
@@ -483,19 +379,7 @@ def download_files(
     session: requests.Session,
     force: bool = False,
 ) -> List[DownloadResult]:
-    """Download each discovered source file, skipping existing/valid files.
-
-    Args:
-        district: District being processed.
-        sources: Output of :func:`discover_sources`.
-        raw_dir: Directory to store raw downloaded files in.
-        config: Census configuration.
-        session: Shared HTTP session.
-        force: If True, re-download even if the file already exists.
-
-    Returns:
-        List of :class:`DownloadResult` for every attempted download.
-    """
+    """Download each discovered source file, skipping existing/valid files."""
     raw_dir.mkdir(parents=True, exist_ok=True)
     results: List[DownloadResult] = []
 
@@ -573,15 +457,7 @@ def download_files(
 # --------------------------------------------------------------------------- #
 
 def validate_dataset(path: Path, min_size_bytes: int = 100) -> bool:
-    """Sanity-check a downloaded/extracted file.
-
-    Args:
-        path: Path to the file being validated.
-        min_size_bytes: Minimum acceptable file size in bytes.
-
-    Returns:
-        True if the file looks valid, False otherwise.
-    """
+    """Sanity-check a downloaded/extracted file."""
     if not path.exists():
         logger.error("Validation failed: file does not exist: %s", path)
         return False
@@ -605,7 +481,6 @@ def validate_dataset(path: Path, min_size_bytes: int = 100) -> bool:
             pd.ExcelFile(path)
         elif suffix == ".csv":
             pd.read_csv(path, nrows=5)
-        # PDFs: existence + size check only (structural parsing happens later).
     except Exception as exc:
         logger.error("Validation failed for %s: %s", path, exc)
         return False
@@ -621,21 +496,7 @@ def validate_dataset(path: Path, min_size_bytes: int = 100) -> bool:
 def extract_tables(
     download: DownloadResult, extract_dir: Path
 ) -> List[pd.DataFrame]:
-    """Extract tabular data from a downloaded file into a list of DataFrames.
-
-    Supports ``.csv``, ``.xls``/``.xlsx`` (all sheets), and ``.zip``
-    archives (recursively unpacked and each member re-processed). PDF
-    table extraction is attempted with ``pdfplumber`` if it is installed;
-    otherwise the PDF is logged and skipped gracefully.
-
-    Args:
-        download: A successful :class:`DownloadResult`.
-        extract_dir: Scratch directory for extracting zip members.
-
-    Returns:
-        List of pandas DataFrames extracted from the file. Empty list if
-        nothing could be extracted.
-    """
+    """Extract tabular data from a downloaded file into a list of DataFrames."""
     if not download.success or download.local_path is None:
         return []
 
@@ -758,6 +619,44 @@ def _normalise_column_name(col: Any) -> str:
     return text.strip("_")
 
 
+def _dedupe_columns(columns: List[str]) -> List[str]:
+    """Make a list of column names unique, preserving order.
+
+    Census PDF tables extracted via ``pdfplumber`` routinely have blank,
+    ``None``, or repeated header cells (merged header rows, multi-line
+    headers split across cells, etc.). After :func:`_normalise_column_name`
+    several of these can collapse onto the same string (e.g. two blank
+    headers both becoming ``""``, or two raw columns both mapping to
+    ``"district_name"`` via ``_COLUMN_RENAME_MAP``). A DataFrame with
+    duplicate column labels breaks downstream: assigning a new column
+    (``df["x"] = ...``), selecting a single column, and -- critically --
+    ``pd.concat()`` all internally reindex columns, and pandas raises
+    ``"Reindexing only valid with uniquely valued Index objects"`` the
+    moment it tries to do that against a non-unique column index.
+
+    This assigns a numeric suffix to every repeat occurrence of a name
+    (first occurrence keeps the bare name), so no DataFrame we build ever
+    has duplicate column labels.
+
+    Args:
+        columns: Raw (already-normalised) column names, in order.
+
+    Returns:
+        A same-length list of guaranteed-unique column names.
+    """
+    seen: Dict[str, int] = {}
+    deduped: List[str] = []
+    for col in columns:
+        base = col if col else "unnamed"
+        if base not in seen:
+            seen[base] = 0
+            deduped.append(base)
+        else:
+            seen[base] += 1
+            deduped.append(f"{base}_{seen[base]}")
+    return deduped
+
+
 def clean_data(
     frames: List[pd.DataFrame], district: DistrictSpec
 ) -> Optional[pd.DataFrame]:
@@ -766,6 +665,9 @@ def clean_data(
     - Lower-cases / snake-cases column names.
     - Maps common Census column spelling variants onto a canonical schema
       (see ``_COLUMN_RENAME_MAP``).
+    - Deduplicates column labels so every frame has a unique column index
+      before it's touched further (see :func:`_dedupe_columns`) -- this is
+      what makes the later ``pd.concat`` safe.
     - Coerces population/household/area-like columns to numeric.
     - Derives ``population_density`` when both population and area exist.
     - Stamps every row with the district name and census code.
@@ -785,10 +687,27 @@ def clean_data(
 
     for raw_df in frames:
         df = raw_df.copy()
+
+        # Step 1: normalise raw header text (may still collide, e.g. two
+        # blank/merged header cells both becoming "").
         df.columns = [_normalise_column_name(c) for c in df.columns]
+
+        # Step 2: dedupe *before* renaming. If we deduped only after the
+        # rename below, two already-duplicate raw columns would still be
+        # ambiguous when the rename dict looks them up (dict keys can't
+        # carry duplicates, but the DataFrame's column index still can).
+        df.columns = _dedupe_columns(list(df.columns))
+
         df = df.rename(columns={
             c: _COLUMN_RENAME_MAP[c] for c in df.columns if c in _COLUMN_RENAME_MAP
         })
+
+        # Step 3: dedupe *again* after renaming. The rename map itself can
+        # introduce fresh collisions -- e.g. a table with both a "district"
+        # and a "district_name" column both map to canonical
+        # "district_name", or two distinct raw headers ("no_hh" and
+        # "households") both map onto "households".
+        df.columns = _dedupe_columns(list(df.columns))
 
         # Drop fully-empty rows/columns produced by header/footer artifacts.
         df = df.dropna(axis=0, how="all").dropna(axis=1, how="all")
@@ -829,12 +748,7 @@ def save_metadata(
     metadata_path: Path,
     entries: List[Dict[str, Any]],
 ) -> None:
-    """Persist (append/merge) dataset metadata entries to ``metadata.json``.
-
-    Args:
-        metadata_path: Path to the shared ``metadata.json`` file.
-        entries: New metadata entries to merge in (keyed by filename).
-    """
+    """Persist (append/merge) dataset metadata entries to ``metadata.json``."""
     existing: List[Dict[str, Any]] = []
     if metadata_path.exists():
         try:
@@ -874,7 +788,7 @@ def _make_metadata_entry(
         "file_size_bytes": download.file_size,
         "num_records": int(len(cleaned_df)) if cleaned_df is not None else None,
         "cleaned_file": str(cleaned_file) if cleaned_file else None,
-        "last_updated": None,  # Census source pages rarely expose this reliably.
+        "last_updated": None,
         "checksum_sha256": (
             _sha256(download.local_path) if download.local_path else None
         ),
@@ -908,20 +822,7 @@ def process_district(
     session: requests.Session,
     force: bool,
 ) -> List[Dict[str, Any]]:
-    """Run the full discover -> download -> extract -> clean pipeline
-    for a single district, never raising -- errors are logged and an
-    empty/partial result is returned so other districts can proceed.
-
-    Args:
-        district: District to process.
-        dirs: Dict with keys 'raw', 'cleaned', 'logs', 'extract'.
-        config: Census configuration.
-        session: Shared HTTP session.
-        force: Force re-download of already-downloaded files.
-
-    Returns:
-        List of metadata entries produced for this district.
-    """
+    """Run the full discover -> download -> extract -> clean pipeline for one district."""
     logger.info("=" * 70)
     logger.info("Processing district: %s", district.name.upper())
     logger.info("=" * 70)
@@ -1033,18 +934,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    """Entry point: orchestrates the full multi-district Census collection run.
-
-    Returns:
-        Process exit code (0 on success, 1 if configuration could not be
-        loaded at all).
-    """
+    """Entry point: orchestrates the full multi-district Census collection run."""
     args = parse_args(argv)
 
     try:
         config = load_config(args.config)
     except (FileNotFoundError, yaml.YAMLError) as exc:
-        # Logging isn't set up yet (we don't know base_dir) -- print + bail.
         print(f"FATAL: could not load config '{args.config}': {exc}", file=sys.stderr)
         return 1
 

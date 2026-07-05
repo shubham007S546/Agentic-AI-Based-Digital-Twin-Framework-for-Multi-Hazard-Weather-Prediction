@@ -1,0 +1,7 @@
+osm_id,osm_type,name,tags,geometry_wkt
+2903119811,node,Police Station Banjar,"{""amenity"": ""police"", ""name"": ""Police Station Banjar""}",POINT (77.3446836 31.6381398)
+4354423419,node,Police Help desk,"{""amenity"": ""police"", ""name"": ""Police Help desk""}",POINT (77.1111738 31.9613255)
+540712765,node,Police Post Jari,"{""amenity"": ""police"", ""name"": ""Police Post Jari""}",POINT (77.2537421 32.0022511)
+856402273,node,Police Station Manali,"{""amenity"": ""police"", ""name"": ""Police Station Manali"", ""wheelchair"": ""yes""}",POINT (77.1863189 32.2368927)
+2380691334,node,Police Assistance,"{""amenity"": ""police"", ""name"": ""Police Assistance""}",POINT (77.1900016 32.2456254)
+5001756326,node,Checkpost,"{""amenity"": ""police"", ""name"": ""Checkpost"", ""name:en"": ""Checkpost""}",POINT (77.2015538 32.3254509)

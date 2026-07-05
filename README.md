@@ -1,136 +1,480 @@
-# Weather Data Project — Mandi District, Himachal Pradesh
+# Agentic AI-Based Digital Twin Framework for Rainfall Prediction and Extreme Weather Intelligence
 
-Historical weather dataset collection pipeline for rainfall intensity,
-cloudburst, and extreme weather event research.
+A modular environmental data engineering framework for collecting, validating, and organizing heterogeneous datasets required for rainfall prediction, cloudburst forecasting, landslide analysis, and digital twin development in Himachal Pradesh.
+
+**Current Focus:** Data Engineering & Environmental Dataset Collection
+
+**Target Districts**
+
+- Mandi
+- Kullu
+- Chamba
 
 ---
 
-## Project Structure
+# Project Overview
+
+The objective of this project is to build a scalable data engineering pipeline that automatically collects, validates, and organizes multi-source environmental datasets.
+
+The collected datasets will later support:
+
+- Rainfall Prediction
+- Cloudburst Prediction
+- Landslide Prediction
+- Flash Flood Prediction
+- Digital Twin Development
+- Disaster Intelligence
+- Decision Support Systems
+
+This repository currently focuses on **dataset collection and engineering**. Machine Learning, Deep Learning, and Agentic AI will be implemented after the master dataset has been created.
+
+---
+
+# Project Workflow
 
 ```
+
+External Data Sources
+│
+▼
+Collector Layer
+│
+▼
+Authentication & Validation
+│
+▼
+Metadata Generation
+│
+▼
+Raw Dataset Repository
+│
+▼
+Preprocessing
+│
+▼
+Feature Engineering
+│
+▼
+Master Dataset
+│
+▼
+Machine Learning
+│
+▼
+Agentic AI
+│
+▼
+Digital Twin
+│
+▼
+Prediction & Early Warning
+
+```
+
+---
+
+# Project Structure
+
+```
+
 Weather_Data_Project/
-│
-├── collectors/                    # One file per data source — never mixed
-│   ├── openmeteo_collector.py     # Source 1: Open-Meteo ERA5 (no key needed)
-│   ├── imd_collector.py           # Source 2: IMD Pune gridded (IMDLIB)
-│   ├── datagov_collector.py       # Source 3: data.gov.in IMD district data
-│   ├── wris_collector.py          # Source 4: India-WRIS CSV loader
-│   └── nasa_collector.py          # Source 5: NASA GPM IMERG
-│
+
+├── collectors/
+│   ├── openmeteo_collector.py
+│   ├── imd_collector.py
+│   ├── era5_collector.py
+│   ├── era5_land_collector.py
+│   ├── nasa_collector.py
+│   ├── modis_collector.py
+│   ├── datagov_collector.py
+│   ├── wris_collector.py
+│   ├── census_collector.py
+│   ├── climate_index_collector.py
+│   ├── hpsdma_collector.py
+│   ├── infrastructure_collector.py
+│   └── reliefweb_collector.py
+
 ├── config/
-│   └── config.yaml                # Single source of truth — change location/dates here
-│
-├── utils/
-│   ├── config_loader.py           # Loads and validates config.yaml
-│   ├── logger.py                  # Logger factory (file + console handlers)
-│   ├── http_client.py             # requests.Session with retry + backoff
-│   └── metadata_writer.py         # Generates metadata.json for each source
-│
+│   ├── config.yaml
+│   └── config.example.yaml
+
 ├── datasets/
-│   ├── source_1_openmeteo/        # Open-Meteo ERA5
-│   │   ├── raw/                   # Per-year raw parquet files
-│   │   ├── cleaned/               # Single cleaned parquet + CSV
-│   │   ├── metadata.json          # Auto-generated provenance record
-│   │   └── logs/                  # Source-specific log files
-│   │
-│   ├── source_2_imd/              # IMD Pune 0.25° gridded
-│   ├── source_3_datagov/          # data.gov.in district rainfall
-│   ├── source_4_wris/             # India-WRIS station telemetry
-│   ├── source_5_nasa_gpm/         # NASA GPM IMERG satellite
-│   └── merged_dataset/            # Reserved for future merging stage
-│
-└── logs/                          # Global project-level log files
+
+├── digital_twin/
+│   ├── climate_indices/
+│   ├── disaster_history/
+│   ├── hydrology/
+│   ├── infrastructure/
+│   ├── metadata/
+│   ├── population/
+│   ├── terrain/
+│   ├── vegetation/
+
+├── utils/
+
+├── logs/
+
+└── README.md
+
 ```
 
 ---
 
-## Setup
+# Implemented Collectors
+
+| Collector | Status |
+|------------|---------|
+| Open-Meteo | ✅ Completed |
+| IMD | ✅ Completed |
+| NASA GPM | ✅ Completed |
+| MODIS (AppEEARS) | 🔄 Running |
+| ERA5 | 🔄 Under Update |
+| ERA5-Land | 🔄 Under Update |
+| India WRIS | ✅ Completed |
+| Data.gov | ✅ Completed |
+| Census | ✅ Completed |
+| Climate Indices | ✅ Completed |
+| HPSDMA | ✅ Completed |
+| Infrastructure | 🔄 Under Development |
+| ReliefWeb | ⏳ Pending API Approval |
+
+---
+
+# Digital Twin Datasets
+
+The project organizes data into thematic layers.
+
+## Climate
+
+- Open-Meteo
+- ERA5
+- ERA5-Land
+- IMD
+
+---
+
+## Satellite
+
+- NASA GPM
+- MODIS NDVI
+
+---
+
+## Hydrology
+
+- India WRIS
+
+---
+
+## Disaster History
+
+- HPSDMA
+- ReliefWeb
+
+---
+
+## Population
+
+- Census
+
+---
+
+## Infrastructure
+
+- Roads
+- Bridges
+- Schools
+- Hospitals
+- Police Stations
+- Fire Stations
+- Government Offices
+- Villages
+- Bus Stops
+- Railway Stations
+- Airports
+- Power Infrastructure
+
+---
+
+## Climate Indices
+
+- ENSO
+- IOD
+- SOI
+- CO₂
+
+---
+
+# Setup
+
+Create a virtual environment
 
 ```bash
-# 1. Create virtual environment
-python -m venv venv
-source venv/bin/activate          # Windows: venv\Scripts\activate
+python -m venv .venv
+```
 
-# 2. Install dependencies
-pip install requests pandas pyarrow tqdm pyyaml beautifulsoup4 lxml imdlib xarray netCDF4
+Activate
+
+Windows
+
+```bash
+.venv\Scripts\activate
+```
+
+Linux
+
+```bash
+source .venv/bin/activate
+```
+
+Install dependencies
+
+```bash
+pip install -r requirements.txt
 ```
 
 ---
 
-## Configuration
+# Configuration
 
-Edit `config/config.yaml` to change:
-- **Location**: state, district, lat/lon, bounding box
-- **Date range**: start_date, end_date
-- **API keys**: datagov, nasa_earthdata
-- **HTTP settings**: timeouts, retries, backoff
+All project settings are controlled through
+
+```
+config/config.yaml
+```
+
+The configuration file contains
+
+- Study Area
+- Districts
+- Bounding Boxes
+- Date Range
+- API Credentials
+- Output Paths
+- Logging
+- Retry Configuration
+- Download Settings
+
+No source code modifications are required when changing the study area or date range.
 
 ---
 
-## Running Collectors
+# Running Collectors
 
-Each collector is independent. Run only the ones you need:
+Run collectors independently from the project root.
 
 ```bash
-# From project root — always run from here
-cd Weather_Data_Project
-
-# Source 1: Open-Meteo (no API key needed — run this first)
 python -m collectors.openmeteo_collector
 
-# Source 2: IMD gridded (requires imdlib + cdsp.imdpune.gov.in registration)
 python -m collectors.imd_collector
 
-# Source 3: data.gov.in (requires API key in config.yaml)
+python -m collectors.era5_collector
+
+python -m collectors.era5_land_collector
+
+python -m collectors.nasa_collector
+
+python -m collectors.modis_collector
+
 python -m collectors.datagov_collector
 
-# Source 4: India-WRIS (requires manually downloaded CSV)
 python -m collectors.wris_collector
 
-# Source 5: NASA GPM (requires NASA Earthdata token in config.yaml)
-python -m collectors.nasa_collector
+python -m collectors.census_collector
+
+python -m collectors.climate_index_collector
+
+python -m collectors.hpsdma_collector
+
+python -m collectors.infrastructure_collector
 ```
 
 ---
 
-## Output Per Source
+# Data Engineering Features
 
-Each collector produces exactly:
+Each collector provides
 
-| File | Description |
-|------|-------------|
-| `raw/*.parquet` | Raw data exactly as received from API |
-| `cleaned/*.parquet` | Deduplicated, typed, validated |
-| `cleaned/*.csv` | Same cleaned data in CSV format |
-| `metadata.json` | Full provenance record |
-| `logs/*.log` | Rotating log files |
-
----
-
-## API Access
-
-| Source | Where to register | Time |
-|--------|------------------|------|
-| Open-Meteo | No registration needed | Instant |
-| IMD Pune (IMDLIB) | cdsp.imdpune.gov.in | 1–2 days |
-| data.gov.in | data.gov.in → Register | 5 minutes |
-| India-WRIS | wdo.indiawris.gov.in → Register | Same day |
-| NASA GPM | urs.earthdata.nasa.gov | 5 minutes |
+- Configuration-driven execution
+- Automatic retry mechanism
+- Resume interrupted downloads
+- Metadata generation
+- Logging
+- Validation
+- Standardized output
+- Progress tracking
 
 ---
 
-## Design Principles
+# Output Structure
 
-- **Source isolation**: each collector is a self-contained class with no dependencies on other collectors
-- **Config-driven**: change state/district/dates in one place
-- **No mixing**: one API per collector file, enforced by structure
-- **Basic cleaning only**: no normalization, no feature engineering, no ML labels
-- **Full provenance**: every output has a metadata.json recording what was downloaded, when, and how
+Each collector generates
+
+```
+raw/
+cleaned/
+metadata.json
+logs/
+```
+
+where applicable.
+
+Metadata includes
+
+- Source
+- Collection Time
+- Variables
+- Spatial Coverage
+- Temporal Coverage
+- File Size
+- Processing Details
 
 ---
 
-## Current Stage
+# Design Principles
 
-✅ Stage 1: Data Collection (this project)
-⬜ Stage 2: Dataset merging (future)
-⬜ Stage 3: ML modelling (future)
+The framework follows several software engineering principles.
+
+- Modular collector architecture
+- One source per collector
+- Configuration-driven design
+- Reproducible data collection
+- Metadata-first workflow
+- Fault-tolerant downloads
+- Independent execution
+- Scalable directory hierarchy
+- Research-oriented data management
+
+---
+
+# Current Status
+
+Current Phase
+
+**Environmental Data Engineering**
+
+Completed
+
+- Project Architecture
+- Collector Framework
+- Logging System
+- Metadata Framework
+- Configuration Management
+- District Boundary Extraction
+- Most Environmental Collectors
+
+Running
+
+- MODIS AppEEARS
+- ERA5
+- ERA5-Land
+
+Pending
+
+- Infrastructure
+- ReliefWeb
+
+---
+
+# Future Roadmap
+
+Phase 1
+
+Environmental Data Collection
+
+↓
+
+Phase 2
+
+Dataset Validation
+
+↓
+
+Phase 3
+
+Preprocessing
+
+↓
+
+Phase 4
+
+Feature Engineering
+
+↓
+
+Phase 5
+
+Master Dataset Generation
+
+↓
+
+Phase 6
+
+Machine Learning
+
+↓
+
+Phase 7
+
+Deep Learning
+
+↓
+
+Phase 8
+
+Agentic AI
+
+↓
+
+Phase 9
+
+Digital Twin
+
+↓
+
+Phase 10
+
+Decision Support & Early Warning System
+
+---
+
+# Technology Stack
+
+Programming
+
+- Python
+
+Geospatial
+
+- GeoPandas
+- Rasterio
+- Shapely
+- Xarray
+
+Data Processing
+
+- Pandas
+- NumPy
+- PyArrow
+
+Networking
+
+- Requests
+- BeautifulSoup
+
+Visualization
+
+- Matplotlib
+
+Machine Learning (Future)
+
+- Scikit-learn
+- XGBoost
+- LightGBM
+- PyTorch
+
+---
+
+# License
+
+This repository is developed as part of the Summer Internship Programme at **IIT Mandi** for academic and research purposes.

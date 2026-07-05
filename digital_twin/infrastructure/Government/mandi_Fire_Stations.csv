@@ -1,0 +1,3 @@
+osm_id,osm_type,name,tags,geometry_wkt
+10911277208,node,Mandi fire station,"{""amenity"": ""fire_station"", ""name"": ""Mandi fire station""}",POINT (76.9449796 31.6829077)
+5577800978,node,Fire Station Mandi,"{""amenity"": ""fire_station"", ""name"": ""Fire Station Mandi"", ""name:hi"": ""दमकल केन्द्र मण्डी""}",POINT (76.9444758 31.70198)

@@ -1,87 +1,259 @@
 # PROJECT_PROGRESS.md
 
-Current Phase
+# Agentic AI-Based Digital Twin Framework for Rainfall Prediction and
+# Extreme Weather Intelligence in Himachal Pradesh
 
-Benchmark Model Training
+---
 
-----------------------------------------------------
+## Current Phase
 
-Completed
+**Data Engineering & Environmental Data Collection**
 
-✓ Data Collection
+Current focus is on building a robust, scalable, and modular data engineering pipeline that will serve as the foundation for machine learning and the future Agentic AI framework.
 
-✓ Cleaning
+---
 
-✓ Dataset Merge
+## Project Progress
 
-✓ Feature Engineering
+| Module | Status |
+|---------|--------|
+| Literature Review | ✅ Completed |
+| Project Architecture | ✅ Completed |
+| Folder Structure | ✅ Completed |
+| Configuration Management | ✅ Completed |
+| Logging Framework | ✅ Completed |
+| Metadata Generation | ✅ Completed |
+| District Boundary Extraction | ✅ Completed |
+| GeoJSON Processing | ✅ Completed |
+| Collector Framework | ✅ Completed |
+| Open-Meteo Collector | ✅ Completed |
+| IMD Collector | ✅ Completed |
+| Data.gov Collector | ✅ Completed |
+| NASA GPM Collector | ✅ Completed |
+| MODIS Collector | 🔄 Running (NASA AppEEARS) |
+| India WRIS Collector | ✅ Completed |
+| HPSDMA Collector | ✅ Completed |
+| Census Collector | ✅ Completed |
+| Climate Indices Collector | ✅ Completed |
+| ERA5 Collector | 🔄 Under Modification |
+| ERA5-Land Collector | 🔄 Under Modification |
+| Infrastructure Collector | 🔄 Under Development |
+| ReliefWeb Collector | ⏳ Waiting for API Approval |
 
-✓ Exploratory Data Analysis
+---
 
-✓ Final Preprocessing
+## Current Achievements
 
-----------------------------------------------------
+### Architecture
 
-Next Task
+- Modular project architecture designed
+- Scalable collector framework implemented
+- Configuration-driven workflow
+- Unified metadata generation
+- Centralized logging system
 
-Train Benchmark Models
+### Spatial Data
 
-1. Linear Regression
+- District boundaries extracted
+- GeoJSON files prepared for:
+  - Mandi
+  - Kullu
+  - Chamba
 
-2. Random Forest
+### Data Collection
 
-3. XGBoost
+Successfully integrated multiple environmental data sources including:
 
-4. LSTM
+- Open-Meteo
+- IMD
+- NASA GPM
+- MODIS (AppEEARS)
+- India WRIS
+- Census
+- Climate Indices
+- HPSDMA
+- Data.gov
 
-5. GRU
+### Engineering Features
 
-6. TCN
+- Automatic retry mechanism
+- Resume downloads
+- Validation framework
+- Metadata generation
+- Configurable collectors
+- Standardized folder hierarchy
 
-7. Temporal Fusion Transformer
+---
 
-----------------------------------------------------
+## Current Challenges
 
-After Benchmark
+- ERA5 CDS authentication updates
+- Large historical dataset downloads
+- NASA AppEEARS processing time
+- Infrastructure data integration
+- Different spatial resolutions
+- Different temporal resolutions
+- Coordinate reference system alignment
 
-Choose Best Model
+---
 
-↓
+## Why Machine Learning Has NOT Started
 
-Rainfall Intensity
+Machine learning has intentionally not started because:
 
-↓
+- Dataset collection is still ongoing.
+- ERA5 and ERA5-Land integration is incomplete.
+- Infrastructure dataset is pending.
+- Dataset validation has not finished.
+- Temporal synchronization is pending.
+- Spatial alignment is pending.
+- Master merged dataset has not yet been generated.
 
-Cloudburst
+Building reliable datasets before training models ensures higher-quality predictions and reduces errors during later stages.
 
-↓
+---
 
-Landslide
+## Current Workflow
 
-----------------------------------------------------
+```
+Research & Planning
+        │
+        ▼
+Dataset Identification
+        │
+        ▼
+Collector Development
+        │
+        ▼
+Authentication & APIs
+        │
+        ▼
+Data Collection
+        │
+        ▼
+Validation
+        │
+        ▼
+Metadata Generation
+        │
+        ▼
+Raw Data Repository
+        │
+        ▼
+(Next Phase)
+```
 
-Research Contribution
+---
 
-Multi-Task Deep Learning Model
+## Next Phase
 
-↓
+- Complete ERA5 Collector
+- Complete ERA5-Land Collector
+- Complete Infrastructure Collector
+- ReliefWeb Integration
+- Validate All Datasets
+- Data Cleaning
+- CRS Standardization
+- Temporal Alignment
+- Spatial Alignment
+- Merge Datasets
+- Exploratory Data Analysis
+- Feature Engineering
+- Master ML Dataset Generation
 
-Shared Encoder
+---
 
-↓
+## Future Development
 
-Four Prediction Heads
+```
+Master Dataset
+        │
+        ▼
+Benchmark Machine Learning Models
+        │
+        ▼
+Deep Learning Models
+        │
+        ▼
+Model Comparison
+        │
+        ▼
+Explainable AI
+        │
+        ▼
+Agentic AI Framework
+        │
+        ▼
+Digital Twin
+        │
+        ▼
+Early Warning System
+        │
+        ▼
+Deployment Dashboard
+```
 
-----------------------------------------------------
+---
 
-Future Work
+## Planned Benchmark Models
 
-Agentic AI
+### Machine Learning
 
-↓
+- Linear Regression
+- Random Forest
+- XGBoost
+- LightGBM
 
-LangGraph
+### Deep Learning
 
-↓
+- LSTM
+- GRU
+- Temporal Convolution Network (TCN)
+- Temporal Fusion Transformer (TFT)
 
-Deployment
+---
+
+## Final Research Goal
+
+Develop a complete Agentic AI-powered Digital Twin capable of:
+
+- Rainfall Prediction
+- Cloudburst Prediction
+- Landslide Prediction
+- Flash Flood Monitoring
+- Disaster Intelligence
+- Environmental Monitoring
+- Decision Support System
+- Early Warning Generation
+
+---
+
+## Current Overall Progress
+
+```
+Architecture              ██████████ 100%
+
+Collectors                █████████░ 90%
+
+Dataset Collection         ████████░░ 80%
+
+Validation                ███░░░░░░░ 30%
+
+Preprocessing             ░░░░░░░░░░ 0%
+
+Feature Engineering       ░░░░░░░░░░ 0%
+
+Machine Learning          ░░░░░░░░░░ 0%
+
+Deep Learning             ░░░░░░░░░░ 0%
+
+Agentic AI                ░░░░░░░░░░ 0%
+
+Digital Twin              ░░░░░░░░░░ 0%
+```
+
+---
+
+**Project Status:** 🟢 Active Development  
+**Current Focus:** Environmental Data Engineering & Collector Development  
+**Next Milestone:** Complete all data collectors and generate a validated master dataset for machine learning.

@@ -50,6 +50,7 @@ import hashlib
 import json
 import logging
 import re
+import socket
 import sys
 import time
 from dataclasses import asdict, dataclass
@@ -221,6 +222,15 @@ def get_hpsdma_settings(config: dict[str, Any]) -> dict[str, Any]:
             "verify_ssl", http_cfg.get("verify_ssl", download_cfg.get("verify_ssl", True))
         )),
         "use_curl_cffi": bool(hpsdma_cfg.get("use_curl_cffi", True)),
+        "force_ipv4": bool(hpsdma_cfg.get("force_ipv4", True)),
+        # Optional HTTP(S) proxy / VPN exit point, e.g.:
+        #   proxies: { http: "http://127.0.0.1:8080", https: "http://127.0.0.1:8080" }
+        # This is the only thing that can route around a network-level TLS
+        # handshake block (ISP/router/security-software level) -- no amount
+        # of TLS fingerprint rotation or IPv4 pinning helps in that case,
+        # since the block happens before any HTTP-layer code runs at all.
+        # Leave empty/omitted to disable (default: direct connection).
+        "proxies": dict(hpsdma_cfg.get("proxies", {}) or {}),
         "chunk_size": int(download_cfg.get("chunk_size_bytes", 1_048_576)),
         "min_year": int(hpsdma_cfg.get("min_year", MIN_YEAR)),
         "max_year": int(hpsdma_cfg.get("max_year", MAX_YEAR)),
@@ -256,29 +266,139 @@ class LegacyTLSAdapter(HTTPAdapter):
         return super().proxy_manager_for(*args, **kwargs)
 
 
-def build_session(*, legacy_tls: bool = True, verify_ssl: bool = True, use_curl_cffi: bool = True) -> "requests.Session":
+_IPV4_PATCH_APPLIED = False
+
+
+def _force_requests_ipv4_resolution() -> None:
     """
-    Create an HTTP session configured to look like a real browser visit.
+    Monkeypatch urllib3's DNS resolution to only return IPv4 addresses.
+
+    Some NIC/.gov.in servers (hpsdma.nic.in included) advertise AAAA
+    (IPv6) records that either aren't actually routable from this network
+    or terminate the TCP/TLS handshake early, surfacing to Python as a
+    bare `ConnectionResetError` / curl `Recv failure: Connection was reset`
+    even though the same host is perfectly reachable over IPv4. Forcing
+    the resolver to IPv4-only sidesteps that class of failure entirely.
+
+    This only affects the plain `requests` backend (urllib3's connection
+    pool uses `socket.getaddrinfo` under the hood, which this patches via
+    `allowed_gai_family`). It is idempotent and safe to call multiple times.
+    """
+    global _IPV4_PATCH_APPLIED
+    if _IPV4_PATCH_APPLIED:
+        return
+    try:
+        import urllib3.util.connection as urllib3_conn
+
+        urllib3_conn.allowed_gai_family = lambda: socket.AF_INET  # type: ignore[assignment]
+        _IPV4_PATCH_APPLIED = True
+        logger.debug("Patched urllib3 to resolve DNS as IPv4-only (allowed_gai_family -> AF_INET).")
+    except Exception as exc:  # pragma: no cover - defensive, must never crash the run
+        logger.debug("Could not patch urllib3 for IPv4-only resolution: %s", exc)
+
+
+def _force_curl_cffi_ipv4(session: Any) -> None:
+    """
+    Force the underlying libcurl handle of a curl_cffi session to resolve
+    and connect over IPv4 only (equivalent to `curl --ipv4`).
+
+    Uses CURLOPT_IPRESOLVE with CURL_IPRESOLVE_V4 (constant value 1 in
+    libcurl's public header, curl/curl.h). Wrapped defensively since the
+    exact attribute path can vary across curl_cffi versions -- failure
+    here is logged and non-fatal, the session still works, it just won't
+    get the IPv4-only benefit.
+    """
+    try:
+        from curl_cffi.const import CurlOpt
+
+        CURL_IPRESOLVE_V4 = 1
+        session.curl.setopt(CurlOpt.IPRESOLVE, CURL_IPRESOLVE_V4)
+        logger.debug("Forced curl_cffi session to IPv4-only (CURLOPT_IPRESOLVE=V4).")
+    except Exception as exc:  # pragma: no cover - defensive, must never crash the run
+        logger.debug(
+            "Could not force IPv4-only on curl_cffi session (non-fatal, continuing "
+            "with default resolution behaviour): %s", exc,
+        )
+
+
+# Ordered list of curl_cffi browser fingerprints to rotate through. Some
+# NIC/.gov.in WAFs black-hole (hang, then reset) a *specific* TLS/HTTP2
+# fingerprint rather than rejecting automated clients outright -- rotating
+# to a different real-browser fingerprint on retry is often all it takes,
+# with no code/config changes needed beyond trying the next one in line.
+CURL_CFFI_IMPERSONATE_CHAIN = ("chrome124", "chrome120", "edge101", "safari17_2_ios")
+
+
+def _build_curl_cffi_session(
+    impersonate: str, headers: dict[str, str], force_ipv4: bool, proxies: dict[str, str]
+) -> Any:
+    session = curl_requests.Session(impersonate=impersonate)
+    session.headers.update(headers)
+    if force_ipv4:
+        _force_curl_cffi_ipv4(session)
+    if proxies:
+        # curl_cffi's Session mirrors requests' proxies= kwarg shape;
+        # setting .proxies directly works the same way.
+        session.proxies.update(proxies)
+    return session
+
+
+def build_session_chain(
+    *,
+    legacy_tls: bool = True,
+    verify_ssl: bool = True,
+    use_curl_cffi: bool = True,
+    force_ipv4: bool = True,
+    proxies: dict[str, str] | None = None,
+) -> list[tuple[str, Any]]:
+    """
+    Build an ordered chain of (label, session) pairs to rotate through on retry.
 
     Government/NIC-hosted sites (like hpsdma.nic.in) commonly run WAF
     protection that resets connections (ConnectionResetError / WinError
-    10054) for automated clients. This can happen at two different levels:
+    10054 / curl "Recv failure: Connection was reset") for automated
+    clients. This can happen for a few different reasons, each addressed
+    by a different link in this chain:
 
     1. Header-level fingerprinting -- fixed by sending a realistic browser
-       header set (done below regardless of backend).
-    2. TLS handshake fingerprinting (JA3) -- headers don't help here, since
-       the block happens before any HTTP data is exchanged. Plain Python
-       `requests`/OpenSSL produces a TLS ClientHello that looks nothing like
-       a real browser's, no matter what headers are set afterward. If the
-       `curl_cffi` package is installed, we use it here instead: it wraps
-       curl-impersonate to reproduce a real Chrome TLS/HTTP2 fingerprint,
-       which is usually what's needed to get past this class of block.
+       header set (done below for every session in the chain).
+    2. TLS/HTTP2 handshake fingerprinting (JA3/JA4) -- headers don't help
+       here, since the block happens before any HTTP data is exchanged.
+       `curl_cffi` wraps curl-impersonate to reproduce a real browser's
+       TLS/HTTP2 fingerprint. Critically, a WAF may only be blocking *one
+       specific* fingerprint (e.g. "chrome124") rather than all automated
+       traffic -- if a request hangs for the full timeout and then reports
+       a reset, that's the signature of a silent black-hole on that exact
+       fingerprint. Rotating to a different real-browser fingerprint
+       (chrome120, edge101, an iOS Safari profile, ...) on the next retry
+       attempt is often enough to get through without changing anything
+       else about the request.
+    3. IPv6 route/handshake resets -- some NIC servers advertise IPv6
+       addresses that reset the connection immediately even when headers
+       and TLS fingerprint are otherwise fine. `force_ipv4` (on by default)
+       pins DNS resolution/connection to IPv4 for every session in the
+       chain, per `_force_requests_ipv4_resolution` / `_force_curl_cffi_ipv4`.
+    4. Network-level TLS handshake blocking (ISP/router/security-software,
+       e.g. SNI-based filtering) -- none of the above help here, since the
+       block happens *before* any of this script's code runs at all (this
+       is confirmed by the same failure occurring with the OS's own native
+       curl/Schannel, completely outside Python). The only way around this
+       is routing through a different network path -- set `proxies` (from
+       `digital_twin_sources.hpsdma.proxies` in config.yaml) to an HTTP(S)
+       proxy or a local VPN client's proxy endpoint, and every session in
+       the chain will use it.
 
-    If `curl_cffi` isn't installed, this transparently falls back to a
-    plain `requests.Session` (optionally with `LegacyTLSAdapter` for older
-    server TLS configs) -- the script still works, it just won't bypass a
-    TLS-fingerprint-based block.
+    The final link in the chain is always a plain `requests.Session`
+    (optionally with `LegacyTLSAdapter` for older server TLS configs), so
+    the script still works even if curl_cffi isn't installed or every
+    impersonated fingerprint is blocked.
+
+    Returns:
+        A non-empty list of (label, session) tuples, most-preferred first.
+        Callers should cycle through this list across retry attempts
+        rather than reusing a single session for every attempt.
     """
+    proxies = proxies or {}
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -294,24 +414,41 @@ def build_session(*, legacy_tls: bool = True, verify_ssl: bool = True, use_curl_
         "Upgrade-Insecure-Requests": "1",
     }
 
-    if use_curl_cffi and CURL_CFFI_AVAILABLE:
-        logger.debug("Using curl_cffi (Chrome TLS-fingerprint impersonation) for HTTP requests.")
-        session = curl_requests.Session(impersonate="chrome124")
-        session.headers.update(headers)
-        return session
+    if proxies:
+        logger.info("Routing HPSDMA requests through configured proxy: %s", proxies)
 
-    if use_curl_cffi and not CURL_CFFI_AVAILABLE:
+    chain: list[tuple[str, Any]] = []
+
+    if use_curl_cffi and CURL_CFFI_AVAILABLE:
+        logger.debug(
+            "Using curl_cffi (browser TLS-fingerprint impersonation) for HTTP requests. "
+            "Fingerprint rotation order: %s", ", ".join(CURL_CFFI_IMPERSONATE_CHAIN),
+        )
+        for impersonate in CURL_CFFI_IMPERSONATE_CHAIN:
+            try:
+                session = _build_curl_cffi_session(impersonate, headers, force_ipv4, proxies)
+                chain.append((f"curl_cffi:{impersonate}", session))
+            except Exception as exc:  # pragma: no cover - defensive, unsupported profile name etc.
+                logger.debug("Could not build curl_cffi session for impersonate=%s: %s", impersonate, exc)
+    elif use_curl_cffi and not CURL_CFFI_AVAILABLE:
         logger.info(
             "curl_cffi not installed -- falling back to plain requests. If this site keeps "
             "resetting connections due to TLS fingerprint blocking, install it with "
             "`pip install curl_cffi` and re-run for a much better chance of success."
         )
 
-    session = requests.Session()
-    session.headers.update(headers)
+    if force_ipv4:
+        _force_requests_ipv4_resolution()
+
+    plain_session = requests.Session()
+    plain_session.headers.update(headers)
+    if proxies:
+        plain_session.proxies.update(proxies)
     if legacy_tls and verify_ssl:
-        session.mount("https://", LegacyTLSAdapter())
-    return session
+        plain_session.mount("https://", LegacyTLSAdapter())
+    chain.append(("requests+legacy_tls", plain_session))
+
+    return chain
 
 
 def warm_up_session(
@@ -339,9 +476,28 @@ def warm_up_session(
         logger.debug("Warm-up request to %s failed (non-fatal): %s", base_url, exc)
 
 
+def warm_up_session_chain(
+    session_chain: list[tuple[str, Any]],
+    base_url: str,
+    *,
+    timeout: int,
+    verify_ssl: bool,
+) -> None:
+    """
+    Warm up every session in the chain, not just the first.
+
+    Each (fingerprint, session) pair is effectively a separate connection
+    identity to the server, so each one benefits independently from an
+    initial cookie/Referer-setting visit before it's used for real requests.
+    """
+    for label, session in session_chain:
+        logger.debug("Warming up session: %s", label)
+        warm_up_session(session, base_url, timeout=timeout, verify_ssl=verify_ssl)
+
+
 def fetch_page(
     url: str,
-    session: Any,
+    session_chain: list[tuple[str, Any]],
     *,
     timeout: int,
     max_retries: int,
@@ -352,6 +508,12 @@ def fetch_page(
     """
     Fetch a URL and parse it with BeautifulSoup, retrying transient failures.
 
+    Each retry attempt rotates to the next session in `session_chain` (see
+    `build_session_chain`) rather than reusing the same one -- if one
+    browser TLS fingerprint is being silently black-holed by a WAF, the
+    next attempt gets a real chance via a different fingerprint instead of
+    just repeating the same doomed request.
+
     Returns:
         A BeautifulSoup object on success, or None if the page could not be
         fetched after all retries (network error, timeout, or a non-retryable
@@ -361,6 +523,7 @@ def fetch_page(
     last_error: str | None = None
 
     for attempt in range(1, max_retries + 1):
+        label, session = session_chain[(attempt - 1) % len(session_chain)]
         try:
             response = session.get(url, timeout=timeout, verify=verify_ssl)
             if response.status_code == 200:
@@ -369,8 +532,8 @@ def fetch_page(
             if response.status_code in retry_on_status:
                 last_error = f"HTTP {response.status_code}"
                 logger.warning(
-                    "Attempt %d/%d: %s returned %s, retrying...",
-                    attempt, max_retries, url, response.status_code,
+                    "Attempt %d/%d [%s]: %s returned %s, retrying...",
+                    attempt, max_retries, label, url, response.status_code,
                 )
             else:
                 logger.error("Failed to fetch %s: HTTP %s (not retryable)", url, response.status_code)
@@ -378,7 +541,7 @@ def fetch_page(
 
         except NETWORK_EXCEPTIONS as exc:
             last_error = str(exc)
-            logger.warning("Attempt %d/%d: error fetching %s: %s", attempt, max_retries, url, exc)
+            logger.warning("Attempt %d/%d [%s]: error fetching %s: %s", attempt, max_retries, label, url, exc)
 
         if attempt < max_retries:
             sleep_for = min(backoff_factor ** attempt, 15.0)
@@ -422,7 +585,7 @@ def _safe_filename(title: str, url: str, year: int | None) -> str:
 
 def fetch_report_links(
     entry_urls: Iterable[str],
-    session: Any,
+    session_chain: list[tuple[str, Any]],
     *,
     crawl_depth: int,
     timeout: int,
@@ -461,7 +624,7 @@ def fetch_report_links(
         logger.info("Scanning page (depth %d): %s", depth, page_url)
         soup = fetch_page(
             page_url,
-            session,
+            session_chain,
             timeout=timeout,
             max_retries=max_retries,
             backoff_factor=backoff_factor,
@@ -530,7 +693,7 @@ def _sha256_of_file(path: Path, chunk_size: int = 1_048_576) -> str:
 def download_report(
     report: ReportLink,
     dest_dir: Path,
-    session: Any,
+    session_chain: list[tuple[str, Any]],
     *,
     timeout: int,
     max_retries: int,
@@ -542,6 +705,10 @@ def download_report(
 ) -> ReportLink:
     """
     Download a single report PDF to `dest_dir`, with retry and skip-if-exists.
+
+    Like `fetch_page`, each retry attempt rotates to the next session in
+    `session_chain` so a black-holed TLS fingerprint on one attempt doesn't
+    doom every subsequent retry too.
 
     Mutates and returns the given `ReportLink` with an updated status
     (`downloaded`, `skipped`, or `failed`) plus size/hash/error metadata.
@@ -560,14 +727,15 @@ def download_report(
     last_error: str | None = None
 
     for attempt in range(1, max_retries + 1):
+        label, session = session_chain[(attempt - 1) % len(session_chain)]
         try:
             with session.get(report.url, stream=True, timeout=timeout, verify=verify_ssl) as response:
                 if response.status_code != 200:
                     if response.status_code in retry_on_status:
                         last_error = f"HTTP {response.status_code}"
                         logger.warning(
-                            "Attempt %d/%d: %s -> HTTP %s, retrying...",
-                            attempt, max_retries, report.filename, response.status_code,
+                            "Attempt %d/%d [%s]: %s -> HTTP %s, retrying...",
+                            attempt, max_retries, label, report.filename, response.status_code,
                         )
                         time.sleep(backoff_factor ** attempt)
                         continue
@@ -599,8 +767,8 @@ def download_report(
 
         except NETWORK_EXCEPTIONS as exc:
             last_error = str(exc)
-            logger.warning("Attempt %d/%d: error downloading %s: %s",
-                            attempt, max_retries, report.filename, exc)
+            logger.warning("Attempt %d/%d [%s]: error downloading %s: %s",
+                            attempt, max_retries, label, report.filename, exc)
             if attempt < max_retries:
                 time.sleep(backoff_factor ** attempt)
         finally:
@@ -727,16 +895,22 @@ def main(argv: list[str] | None = None) -> int:
     logger.info("Portal      : %s", settings["portal_url"])
     logger.info("Raw dir     : %s", raw_dir)
     logger.info("Year range  : %d - %d", settings["min_year"], settings["max_year"])
-    logger.info(
-        "HTTP backend: %s",
-        "curl_cffi (Chrome TLS impersonation)"
-        if (settings["use_curl_cffi"] and CURL_CFFI_AVAILABLE)
-        else "requests (curl_cffi not installed or disabled)",
+    session_chain = build_session_chain(
+        verify_ssl=settings["verify_ssl"],
+        use_curl_cffi=settings["use_curl_cffi"],
+        force_ipv4=settings["force_ipv4"],
+        proxies=settings["proxies"],
     )
+    logger.info(
+        "HTTP backend chain (rotates per retry attempt): %s",
+        " -> ".join(label for label, _ in session_chain),
+    )
+    logger.info("IPv4-only   : %s", "enabled" if settings["force_ipv4"] else "disabled")
     logger.info("=" * 70)
 
-    session = build_session(verify_ssl=settings["verify_ssl"], use_curl_cffi=settings["use_curl_cffi"])
-    warm_up_session(session, settings["portal_url"], timeout=settings["timeout"], verify_ssl=settings["verify_ssl"])
+    warm_up_session_chain(
+        session_chain, settings["portal_url"], timeout=settings["timeout"], verify_ssl=settings["verify_ssl"]
+    )
 
     entry_urls = list(settings["entry_urls"])
     if args.retry_only:
@@ -746,7 +920,7 @@ def main(argv: list[str] | None = None) -> int:
 
     reports, site_reachable = fetch_report_links(
         entry_urls,
-        session,
+        session_chain,
         crawl_depth=settings["crawl_depth"],
         timeout=settings["timeout"],
         max_retries=settings["max_retries"],
@@ -783,7 +957,7 @@ def main(argv: list[str] | None = None) -> int:
         updated = download_report(
             report,
             raw_dir,
-            session,
+            session_chain,
             timeout=settings["timeout"],
             max_retries=settings["max_retries"],
             backoff_factor=settings["backoff_factor"],
