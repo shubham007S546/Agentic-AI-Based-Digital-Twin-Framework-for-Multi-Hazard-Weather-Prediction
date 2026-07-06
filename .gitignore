@@ -36,7 +36,6 @@ datasets/
 
 # Generated outputs
 eda_output/
-ml_ready/
 
 # -------------------------
 # Logs

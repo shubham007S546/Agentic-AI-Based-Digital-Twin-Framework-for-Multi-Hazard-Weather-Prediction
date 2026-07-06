@@ -6,18 +6,31 @@ from three sources in priority order: CWC → NHP → WRIS.
 
 DATA STRATEGY PER SOURCE
 ------------------------
-CWC  : CWC does NOT publish per-station bulk CSV/XML download links. Data is
-       fetched from the CWC Flood Forecast System (FFS) live portal:
-         https://ffs.india-water.gov.in/
-       The collector uses the FFS internal JSON API (discovered from the portal's
-       network traffic) to pull historical water-level observations per station.
-       If a station also has `known_files` configured, those are downloaded first
-       and merged; the live API is then used to fill any remaining gap.
+CWC  : CWC does NOT publish per-station bulk CSV/XML download links, and it
+       does NOT expose a live "list all stations" API either -- there is no
+       such endpoint on the FFS portal. Station -> stationCode mapping is a
+       static, manually-curated table (see `cwc.station_code_map` in
+       config.yaml), the same approach used by the published GUARDIAN
+       scraper (Patidar, Indu & Karmakar, 2024, Sci Data,
+       https://doi.org/10.1038/s41597-024-03923-8; code:
+       https://github.com/girishpatidar/discharge_india). Each station's
+       `ffs_station_code` is found ONCE via browser DevTools and stored in
+       config -- it is never fetched at runtime.
+       Real data endpoint (verified working, POST):
+         https://ffs.india-water.gov.in/web-api/getHGStationDataForFFS/
+       Fallback endpoint if the above is ever pulled (verified working, GET):
+         https://ffs.india-water.gov.in/iam/api/new-entry-data/specification/sorted
+       If a station also has `known_files` configured, those are downloaded
+       first and merged; the live API then fills any remaining gap.
 
 NHP  : Same pattern as CWC — known_files first, then NHP portal API fallback.
        Currently no real station codes are configured, so NHP is a clean skip.
 
-WRIS : Disabled in config (API endpoint down as of July 2026). Clean skip.
+WRIS : Disabled in config (indiawris.gov.in/wris/ subpath serves nothing but
+       a default Apache test page as of July 2026 -- dead deployment, not a
+       transient outage). Clean skip. www.indiawris.gov.in (the current,
+       actively maintained portal) is a possible future replacement but has
+       not been wired up yet -- see TODO in config.
 
 OUTPUT
 ------
@@ -27,6 +40,46 @@ Per district, per source:
     cleaned/<district>/<source>/<station_id>_cleaned.parquet
     logs/<district>_river_discharge.log
     metadata.json   (updated after every run)
+
+CHANGELOG
+---------
+2026-07-05 (v3): Replaced the fictitious CWC "list stations" + GET
+            "stationdata" API with the two REAL endpoints used by the
+            published GUARDIAN scraper (see module docstring above):
+              1. POST https://ffs.india-water.gov.in/web-api/getHGStationDataForFFS/
+                 payload: {"stationCode": "'<code>'", "startDate": "...", "endDate": "..."}
+                 (note: stationCode value is wrapped in literal single quotes)
+              2. GET https://ffs.india-water.gov.in/iam/api/new-entry-data/specification/sorted
+                 (fallback if #1 is ever retired -- uses a URL-encoded
+                 "specification" filter object instead of simple params)
+            REMOVED `_fetch_cwc_station_list()` and the whole "prefetch a
+            live station map" flow -- there is no such live endpoint; CWC
+            never published one and the FFS Angular app doesn't call one
+            either. Station codes now come STRAIGHT FROM CONFIG
+            (`station['ffs_station_code']`), matching the same
+            manually-curated-mapping approach the GUARDIAN paper's own code
+            uses (their `name-code.xlsx`). This is a one-time lookup per
+            station via browser DevTools, not a per-run network call.
+            Candidate HP-region stations (from the GUARDIAN paper's public
+            station_locations.csv, code TBD by manual DevTools lookup):
+            BAROT (32.05N 76.83E, Mandi dist., Uhl river), RAMPUR (31.45N
+            77.63E, near Kullu, Sutlej river), KOTHI (32.32N 77.20E, near
+            Manali), TANDI (32.55N 76.98E, Lahaul-Spiti, Chandra/Bhaga
+            confluence).
+
+2026-07-05 (v2): Fixed silent-skip bug in _collect_station(). Previously,
+            when cwc_station_map was empty, the whole CWC-live-API block was
+            skipped with NO per-station log line. Now every CWC station
+            logs an explicit ERROR/WARNING when its code is missing, and
+            per-station diagnostics are unconditional. (Superseded by v3
+            above, which removes cwc_station_map entirely, but the
+            per-station diagnostic-logging discipline this fix established
+            is kept.)
+
+2026-07-05 (v1): Fixed `_get()` swallowing per-call `timeout=` kwargs
+            (collided with the hardcoded default -> TypeError -> silently
+            caught by broad `except Exception` at every call site). Also
+            made 4xx errors fail fast instead of retrying 5x with backoff.
 """
 
 from __future__ import annotations
@@ -34,7 +87,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -73,18 +126,34 @@ def _make_session(cfg: dict) -> requests.Session:
 
 
 def _get(session: requests.Session, url: str, cfg: dict, **kwargs) -> requests.Response:
-    """GET with retry/backoff aligned to config."""
+    """GET with retry/backoff aligned to config. (See v1 changelog entry.)"""
     rc = _req_cfg(cfg)
     retries = rc.get("retries", 5)
     backoff = rc.get("backoff_factor", 2.0)
-    timeout = rc.get("timeout", 120)
-    verify  = rc.get("verify_ssl", True)
+    timeout = kwargs.pop("timeout", rc.get("timeout", 120))
+    verify  = kwargs.pop("verify", rc.get("verify_ssl", True))
 
     for attempt in range(retries):
         try:
             r = session.get(url, timeout=timeout, verify=verify, **kwargs)
             r.raise_for_status()
             return r
+        except requests.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            if status is not None and 400 <= status < 500 and status != 429:
+                logger.error(
+                    "GET %s -> %s %s (client error, NOT retrying -- the URL "
+                    "or parameters are wrong, this will not fix itself on "
+                    "retry): %s",
+                    url, status, exc.response.reason if exc.response is not None else "",
+                    exc,
+                )
+                raise
+            if attempt == retries - 1:
+                raise
+            wait = backoff ** attempt
+            logger.warning("GET %s failed (%s), retrying in %.1fs …", url, exc, wait)
+            time.sleep(wait)
         except requests.RequestException as exc:
             if attempt == retries - 1:
                 raise
@@ -92,6 +161,43 @@ def _get(session: requests.Session, url: str, cfg: dict, **kwargs) -> requests.R
             logger.warning("GET %s failed (%s), retrying in %.1fs …", url, exc, wait)
             time.sleep(wait)
     raise RuntimeError(f"GET {url} failed after {retries} attempts")  # never reached
+
+
+def _post(session: requests.Session, url: str, cfg: dict, json_body: dict, **kwargs) -> requests.Response:
+    """POST with the same retry/backoff discipline as _get(). Needed because
+    the real CWC FFS data endpoint is a POST with a JSON body, not a GET."""
+    rc = _req_cfg(cfg)
+    retries = rc.get("retries", 5)
+    backoff = rc.get("backoff_factor", 2.0)
+    timeout = kwargs.pop("timeout", rc.get("timeout", 120))
+    verify  = kwargs.pop("verify", rc.get("verify_ssl", True))
+
+    for attempt in range(retries):
+        try:
+            r = session.post(url, json=json_body, timeout=timeout, verify=verify, **kwargs)
+            r.raise_for_status()
+            return r
+        except requests.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            if status is not None and 400 <= status < 500 and status != 429:
+                logger.error(
+                    "POST %s -> %s %s (client error, NOT retrying): %s",
+                    url, status, exc.response.reason if exc.response is not None else "",
+                    exc,
+                )
+                raise
+            if attempt == retries - 1:
+                raise
+            wait = backoff ** attempt
+            logger.warning("POST %s failed (%s), retrying in %.1fs …", url, exc, wait)
+            time.sleep(wait)
+        except requests.RequestException as exc:
+            if attempt == retries - 1:
+                raise
+            wait = backoff ** attempt
+            logger.warning("POST %s failed (%s), retrying in %.1fs …", url, exc, wait)
+            time.sleep(wait)
+    raise RuntimeError(f"POST {url} failed after {retries} attempts")  # never reached
 
 
 # ---------------------------------------------------------------------------
@@ -110,66 +216,175 @@ def normalise_columns(df: pd.DataFrame, mapping: dict[str, list[str]]) -> pd.Dat
 
 
 # ---------------------------------------------------------------------------
-#  CWC FFS live API
+#  CWC FFS live API  (REAL endpoints, verified against the published
+#  GUARDIAN scraper -- Patidar, Indu & Karmakar 2024, Sci Data,
+#  https://doi.org/10.1038/s41597-024-03923-8,
+#  code: https://github.com/girishpatidar/discharge_india)
 # ---------------------------------------------------------------------------
-
-# CWC's Flood Forecast System exposes an undocumented internal JSON API used
-# by its Angular front-end. These endpoints were discovered by inspecting
-# network traffic on https://ffs.india-water.gov.in/
 #
-# Endpoints used:
-#   /api/v1/stations          — list all stations (GET, no auth)
-#   /api/v1/stationdata       — water-level time series for one station (GET)
+# IMPORTANT: there is no live "list all stations" endpoint on this portal.
+# CWC/FFS never published one, and the Angular front-end doesn't call one
+# either -- station codes are looked up client-side against a bundled
+# dataset. The only reliable way to get a station's code is:
+#   1. open https://ffs.india-water.gov.in/ in a real browser
+#   2. search for / select the station on the map or station list
+#   3. open DevTools -> Network -> XHR/Fetch, look at the request to
+#      getHGStationDataForFFS (or the fallback specification/sorted
+#      endpoint), and read the stationCode value out of the request body
+#   4. put that code in config.yaml under the station's `ffs_station_code`
+#      field (see _collect_station below) -- this is a ONE-TIME lookup,
+#      not a per-run fetch.
 #
-# Parameters for /api/v1/stationdata:
-#   stationCode : station code from the stations list (field: stationCode)
-#   fromDate    : "YYYY-MM-DD"
-#   toDate      : "YYYY-MM-DD"
-#
-# NOTE: These are internal endpoints with no SLA guarantee. If they stop
-# responding, set cwc.enabled: false in config and implement an alternative
-# (e.g. scraping the hydrograph SVG data or requesting CWC data sharing).
+# Candidate stations inside the Himachal Pradesh bounding box, pulled from
+# the GUARDIAN paper's public station_locations.csv (name + lat/lon only --
+# codes still need the manual DevTools lookup above):
+#   BAROT   32.0500N 76.8300E  -- Mandi district, Uhl river (Beas tributary)
+#   RAMPUR  31.4500N 77.6333E  -- near Kullu, Sutlej river
+#   KOTHI   32.3164N 77.1997E  -- near Manali, Kullu district
+#   TANDI   32.5503N 76.9797E  -- Lahaul-Spiti, Chandra/Bhaga confluence
+#   GHOUSHAL 32.5331N 76.9331E -- Lahaul-Spiti area
+#   UDAIPUR 32.6997N 76.6497E  -- Lahaul-Spiti, Chenab river
+#   HANSA   32.4486N 77.8628E  -- Spiti area
+#   Sangla  31.4225N 78.2650E  -- Kinnaur, Baspa river
+#   NATHPA  31.5664N 77.9831E  -- Kinnaur, Sutlej river
 
-CWC_FFS_BASE   = "https://ffs.india-water.gov.in"
-CWC_STATIONS   = f"{CWC_FFS_BASE}/api/v1/stations"
-CWC_STATIONDATA = f"{CWC_FFS_BASE}/api/v1/stationdata"
+CWC_FFS_BASE = "https://ffs.india-water.gov.in"
 
-# Fallback: some older CWC deployments used this base instead
-CWC_FFS_BASE_ALT    = "https://cwc.gov.in/ffs"
-CWC_STATIONS_ALT    = f"{CWC_FFS_BASE_ALT}/api/v1/stations"
-CWC_STATIONDATA_ALT = f"{CWC_FFS_BASE_ALT}/api/v1/stationdata"
+# Primary: real, verified working endpoint (POST + JSON body)
+CWC_STATIONDATA_URL = f"{CWC_FFS_BASE}/web-api/getHGStationDataForFFS/"
+
+# Fallback: real, verified working endpoint (GET + URL-encoded specification
+# filter). Used only if the primary POST endpoint stops responding, since it
+# is uglier to build and the response schema is different (id.dataTime /
+# dataValue instead of actualTime / value).
+CWC_STATIONDATA_FALLBACK_URL = f"{CWC_FFS_BASE}/iam/api/new-entry-data/specification/sorted"
+
+_PRIMARY_DT_FMT  = "%Y-%m-%d %H:%M:%S.%f"   # actualTime format from primary endpoint
+_FALLBACK_DT_FMT = "%Y-%m-%dT%H:%M:%S"      # id.dataTime format from fallback endpoint
 
 
-def _fetch_cwc_station_list(session: requests.Session, cfg: dict) -> dict[str, str]:
+def _fetch_cwc_observations_primary(
+    session: requests.Session,
+    cfg: dict,
+    station_code: str,
+    start_date: str,
+    end_date: str,
+) -> pd.DataFrame | None:
     """
-    Returns {station_name_upper: stationCode} from the CWC FFS stations API.
-    Tries primary FFS base, falls back to alternate base.
-    Returns {} on failure (collector will skip live fetch and warn).
+    Fetch water-level time series from the primary (POST) CWC FFS endpoint.
+    station_code is the raw code (e.g. "1234") -- the literal single quotes
+    the API expects are added here, matching the GUARDIAN scraper exactly.
     """
-    for url in [CWC_STATIONS, CWC_STATIONS_ALT]:
+    payload = {
+        "stationCode": f"'{station_code}'",
+        "startDate": start_date,
+        "endDate": end_date,
+    }
+    try:
+        r = _post(session, CWC_STATIONDATA_URL, cfg, json_body=payload, timeout=60)
+        data = r.json()
+    except Exception as exc:
+        logger.warning(
+            "CWC FFS primary endpoint failed for station code %s: %s",
+            station_code, exc,
+        )
+        return None
+
+    if not isinstance(data, list) or not data:
+        logger.debug(
+            "CWC FFS primary endpoint returned no usable records for station "
+            "code %s (type=%s)", station_code, type(data).__name__,
+        )
+        return None
+
+    rows = []
+    for rec in data:
         try:
-            r = _get(session, url, cfg, timeout=30)
-            data = r.json()
-            # Response is either a list or {"data": [...]}
-            if isinstance(data, list):
-                stations = data
-            elif isinstance(data, dict):
-                stations = data.get("data") or data.get("stations") or []
-            else:
-                stations = []
+            rows.append({
+                "observation_datetime": datetime.strptime(rec["actualTime"], _PRIMARY_DT_FMT),
+                "water_level": rec["value"],
+                "cwc_station_code": rec.get("stationCode", station_code),
+            })
+        except (KeyError, ValueError, TypeError):
+            continue
 
-            mapping = {}
-            for s in stations:
-                code = s.get("stationCode") or s.get("station_code") or s.get("id")
-                name = s.get("stationName") or s.get("station_name") or s.get("name") or ""
-                if code and name:
-                    mapping[name.strip().upper()] = str(code)
-            if mapping:
-                logger.debug("CWC FFS station list loaded: %d stations from %s", len(mapping), url)
-                return mapping
-        except Exception as exc:
-            logger.warning("CWC FFS station list unavailable at %s: %s", url, exc)
-    return {}
+    if not rows:
+        logger.debug("CWC FFS primary endpoint: 0 parseable rows for station code %s", station_code)
+        return None
+
+    df = pd.DataFrame(rows).sort_values("observation_datetime")
+    logger.debug("CWC FFS primary endpoint: %d rows for station code %s", len(df), station_code)
+    return df
+
+
+def _fetch_cwc_observations_fallback(
+    session: requests.Session,
+    cfg: dict,
+    station_code: str,
+    start_date: str,
+    end_date: str,
+) -> pd.DataFrame | None:
+    """
+    Fetch water-level time series from the fallback (GET) CWC FFS endpoint.
+    Only tried if the primary POST endpoint fails or returns nothing.
+    datatypeCode is fixed to "HHS" (hourly water-level series), matching the
+    GUARDIAN scraper's v2 notebook.
+    """
+    specification = (
+        '%7B%22where%22:%7B%22where%22:%7B%22where%22:%7B%22expression%22:'
+        '%7B%22valueIsRelationField%22:false,%22fieldName%22:%22id.stationCode%22,'
+        f'%22operator%22:%22eq%22,%22value%22:%22{station_code}%22%7D%7D,'
+        '%22and%22:%7B%22expression%22:%7B%22valueIsRelationField%22:false,'
+        '%22fieldName%22:%22id.datatypeCode%22,%22operator%22:%22eq%22,'
+        '%22value%22:%22HHS%22%7D%7D%7D,%22and%22:%7B%22expression%22:'
+        '%7B%22valueIsRelationField%22:false,%22fieldName%22:%22dataValue%22,'
+        '%22operator%22:%22null%22,%22value%22:%22false%22%7D%7D%7D,'
+        '%22and%22:%7B%22expression%22:%7B%22valueIsRelationField%22:false,'
+        '%22fieldName%22:%22id.dataTime%22,%22operator%22:%22btn%22,'
+        f'%22value%22:%22{start_date}T00:00:00.000,{end_date}T23:59:59.000%22%7D%7D%7D'
+    )
+    params = {
+        "sort-criteria": (
+            '%7B%22sortOrderDtos%22:%5B%7B%22sortDirection%22:%22ASC%22,'
+            '%22field%22:%22id.dataTime%22%7D%5D%7D'
+        ),
+        "specification": specification,
+    }
+    try:
+        r = _get(session, CWC_STATIONDATA_FALLBACK_URL, cfg, params=params, timeout=60)
+        data = r.json()
+    except Exception as exc:
+        logger.warning(
+            "CWC FFS fallback endpoint failed for station code %s: %s",
+            station_code, exc,
+        )
+        return None
+
+    if not isinstance(data, list) or not data:
+        logger.debug(
+            "CWC FFS fallback endpoint returned no usable records for "
+            "station code %s", station_code,
+        )
+        return None
+
+    rows = []
+    for rec in data:
+        try:
+            rows.append({
+                "observation_datetime": datetime.strptime(rec["id"]["dataTime"], _FALLBACK_DT_FMT),
+                "water_level": rec["dataValue"],
+                "cwc_station_code": rec.get("stationCode", station_code),
+            })
+        except (KeyError, ValueError, TypeError):
+            continue
+
+    if not rows:
+        logger.debug("CWC FFS fallback endpoint: 0 parseable rows for station code %s", station_code)
+        return None
+
+    df = pd.DataFrame(rows).sort_values("observation_datetime")
+    logger.debug("CWC FFS fallback endpoint: %d rows for station code %s", len(df), station_code)
+    return df
 
 
 def _fetch_cwc_observations(
@@ -179,73 +394,16 @@ def _fetch_cwc_observations(
     start_date: str,
     end_date: str,
 ) -> pd.DataFrame | None:
-    """
-    Fetch water-level time series from CWC FFS for one station.
-    Returns a DataFrame with columns [observation_datetime, water_level]
-    or None if the request fails.
-    """
-    params = {
-        "stationCode": station_code,
-        "fromDate":    start_date,
-        "toDate":      end_date,
-    }
-    for url in [CWC_STATIONDATA, CWC_STATIONDATA_ALT]:
-        try:
-            r = _get(session, url, cfg, params=params, timeout=60)
-            data = r.json()
+    """Try the primary POST endpoint first, then the fallback GET endpoint."""
+    df = _fetch_cwc_observations_primary(session, cfg, station_code, start_date, end_date)
+    if df is not None and not df.empty:
+        return df
 
-            # Response shape varies — normalise to a list of records
-            if isinstance(data, list):
-                records = data
-            elif isinstance(data, dict):
-                records = (
-                    data.get("data")
-                    or data.get("observations")
-                    or data.get("waterLevel")
-                    or []
-                )
-            else:
-                records = []
-
-            if not records:
-                logger.debug("CWC FFS returned empty data for station %s", station_code)
-                return None
-
-            df = pd.DataFrame(records)
-            df = normalise_columns(df, {
-                "observation_datetime": [
-                    "date", "Date", "datetime", "DateTime", "observationDate",
-                    "observation_date", "Timestamp", "timestamp",
-                ],
-                "water_level": [
-                    "waterLevel", "water_level", "WaterLevel", "level",
-                    "Level", "gauge", "Gauge",
-                ],
-                "river_discharge": [
-                    "discharge", "Discharge", "Q", "flow", "Flow",
-                ],
-            })
-
-            # Ensure datetime column is parsed
-            if "observation_datetime" in df.columns:
-                df["observation_datetime"] = pd.to_datetime(
-                    df["observation_datetime"], errors="coerce"
-                )
-                df = df.dropna(subset=["observation_datetime"])
-
-            logger.debug(
-                "CWC FFS: %d rows for station %s from %s",
-                len(df), station_code, url,
-            )
-            return df
-
-        except Exception as exc:
-            logger.warning(
-                "CWC FFS data fetch failed for station %s at %s: %s",
-                station_code, url, exc,
-            )
-
-    return None
+    logger.info(
+        "CWC FFS primary endpoint gave no data for station code %s -- trying fallback endpoint",
+        station_code,
+    )
+    return _fetch_cwc_observations_fallback(session, cfg, station_code, start_date, end_date)
 
 
 # ---------------------------------------------------------------------------
@@ -328,11 +486,15 @@ def _collect_station(
     end_date:      str,
     out_raw_dir:   Path,
     out_clean_dir: Path,
-    cwc_station_map: dict[str, str],   # {NAME_UPPER: stationCode} — empty for non-CWC
 ) -> bool:
     """
     Attempt to collect data for one station.
     Returns True if any data was saved, False otherwise.
+
+    NOTE (v3): the `cwc_station_map` parameter from the previous version is
+    gone. There is no live station-code lookup anymore -- CWC stations must
+    carry an explicit `ffs_station_code` in config, found once via DevTools
+    (see the CWC FFS live API section above).
     """
     sid      = station.get("station_id", "UNKNOWN")
     sname    = station.get("station_name", sid)
@@ -368,24 +530,21 @@ def _collect_station(
         )
 
     # ── 2. CWC FFS live API (CWC only) ─────────────────────────────────────
-    if source_name.lower() == "cwc" and cwc_station_map:
-        # Try to find this station's FFS code by matching station_name
-        fss_code = cwc_station_map.get(sname.strip().upper())
-        if not fss_code:
-            # Fuzzy fallback: check if any FFS station name contains our name
-            for ffs_name, code in cwc_station_map.items():
-                if sname.upper() in ffs_name or ffs_name in sname.upper():
-                    fss_code = code
-                    logger.debug(
-                        "Station '%s': fuzzy-matched FFS name '%s' (code %s)",
-                        sname, ffs_name, code,
-                    )
-                    break
-
-        if fss_code:
-            df_live = _fetch_cwc_observations(
-                session, cfg, fss_code, start_date, end_date
+    if source_name.lower() == "cwc":
+        ffs_code = station.get("ffs_station_code")
+        if not ffs_code:
+            logger.warning(
+                "Station '%s' (%s, district '%s') -- SKIPPED CWC FFS live API: "
+                "no 'ffs_station_code' set in config for this station. There is "
+                "no live station-list endpoint to look this up automatically -- "
+                "find it once via https://ffs.india-water.gov.in/ in a browser "
+                "(DevTools -> Network -> find the getHGStationDataForFFS request "
+                "for this station -> copy its stationCode) and add "
+                "'ffs_station_code: <code>' to this station's config entry.",
+                sid, source_name, district,
             )
+        else:
+            df_live = _fetch_cwc_observations(session, cfg, ffs_code, start_date, end_date)
             if df_live is not None and not df_live.empty:
                 df_live["station_id"]   = sid
                 df_live["station_name"] = sname
@@ -397,17 +556,11 @@ def _collect_station(
                 frames.append(df_live)
             else:
                 logger.info(
-                    "CWC FFS returned no data for station '%s' (code %s) -- "
-                    "station may be inactive or outside date range",
-                    sname, fss_code,
+                    "CWC FFS returned no data for station '%s' (ffs code %s) via "
+                    "either endpoint -- station may be inactive, outside date "
+                    "range, or the code may be stale/incorrect",
+                    sname, ffs_code,
                 )
-        else:
-            logger.warning(
-                "Station '%s' not found in CWC FFS station list. "
-                "FFS may use a different name — check https://ffs.india-water.gov.in/ "
-                "and update station_name in config if needed.",
-                sname,
-            )
 
     # ── 3. Merge and save ──────────────────────────────────────────────────
     if not frames:
@@ -472,7 +625,6 @@ def _collect_source(
     start_date: str,
     end_date:   str,
     base_dir:   Path,
-    cwc_station_map: dict[str, str],
 ) -> bool:
     """
     Run collection for one source (cwc/nhp/wris) for one district.
@@ -511,7 +663,6 @@ def _collect_source(
             end_date      = end_date,
             out_raw_dir   = out_raw_dir,
             out_clean_dir = out_clean_dir,
-            cwc_station_map = cwc_station_map,
         )
         if ok:
             any_data = True
@@ -549,28 +700,33 @@ def orchestrate(cfg: dict, dry_run: bool = False) -> None:
 
     session = _make_session(cfg)
 
-    # Pre-fetch CWC FFS station list once (reused across all districts)
-    cwc_station_map: dict[str, str] = {}
+    # NOTE (v3): no more pre-fetch of a global CWC station map -- there is no
+    # live endpoint for that. Each station's ffs_station_code is read
+    # directly from config inside _collect_station().
     cwc_cfg = rd_cfg.get("sources", {}).get("cwc", {})
     if cwc_cfg.get("enabled", True):
-        logger.info("Fetching CWC FFS station list …")
-        cwc_station_map = _fetch_cwc_station_list(session, cfg)
-        if cwc_station_map:
-            logger.info("CWC FFS station list: %d stations available", len(cwc_station_map))
-        else:
-            logger.warning(
-                "CWC FFS station list could not be fetched. "
-                "Live water-level data will be unavailable. "
-                "Check https://ffs.india-water.gov.in/ and verify the API endpoints "
-                "in this file (CWC_STATIONS / CWC_STATIONDATA constants)."
-            )
+        n_with_code = 0
+        n_total = 0
+        for district_cfg in cwc_cfg.get("districts", {}).values():
+            for station in district_cfg.get("stations") or []:
+                n_total += 1
+                if station.get("ffs_station_code"):
+                    n_with_code += 1
+        logger.info(
+            "CWC source enabled: %d/%d configured stations have an "
+            "ffs_station_code set (the rest will log a per-station WARNING "
+            "and skip the live API step)",
+            n_with_code, n_total,
+        )
+    else:
+        logger.info("Source 'cwc' is disabled in config")
 
     # Set up per-district log files
     log_dir = base_dir / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
 
     metadata: dict[str, Any] = {
-        "run_timestamp": datetime.utcnow().isoformat() + "Z",
+        "run_timestamp": datetime.now(timezone.utc).isoformat(),
         "start_date":    start_date,
         "end_date":      end_date,
         "districts":     {},
@@ -598,20 +754,18 @@ def orchestrate(cfg: dict, dry_run: bool = False) -> None:
                 start_date      = start_date,
                 end_date        = end_date,
                 base_dir        = base_dir,
-                cwc_station_map = cwc_station_map,
             )
             if ok:
                 district_meta["sources_succeeded"].append(source_key)
                 success = True
                 # Do NOT break — collect from all sources; merge later if needed
-                # (comment out the line above and uncomment below to use first-wins)
-                # break
 
         if not success:
             logger.error(
                 "No source (%s) produced usable data for district '%s'. "
-                "CWC FFS API may be unreachable — check connectivity and "
-                "verify CWC_STATIONS endpoint in river_discharge_collector.py.",
+                "For CWC stations, check that ffs_station_code is set and "
+                "still valid (station codes can be re-verified any time via "
+                "DevTools on https://ffs.india-water.gov.in/).",
                 ", ".join(priorities), district,
             )
 

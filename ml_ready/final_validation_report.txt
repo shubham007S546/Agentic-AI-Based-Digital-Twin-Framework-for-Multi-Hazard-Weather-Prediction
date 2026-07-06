@@ -1,0 +1,26 @@
+=================================================================
+  FINAL VALIDATION REPORT
+=================================================================
+
+Run timestamp : 2026-07-02T00:24:37.893170
+Input file    : datasets\merged_dataset\final_dataset.csv
+Output rows   : 24,073
+Final features: 33
+
+  [PASS                ] Verify Target Labels
+  [FAIL (5 issue(s))   ] Verify No Data Leakage
+      - STATISTICAL LEAK: 'dewpoint_2m' alone predicts 'cloudburst_flag' with AUC=0.9596
+      - STATISTICAL LEAK: 'rolling_precip_24h' alone predicts 'cloudburst_flag' with AUC=0.9166
+      - STATISTICAL LEAK: 'rolling_precip_72h' alone predicts 'cloudburst_flag' with AUC=0.9016
+      - STATISTICAL LEAK: 'rolling_precip_24h' alone predicts 'landslide_risk' with AUC=0.9985
+      - STATISTICAL LEAK: 'rolling_precip_72h' alone predicts 'landslide_risk' with AUC=0.9882
+  [PASS                ] Verify Data Types
+  [PASS                ] Check NaN / Inf
+
+  Constant features removed   : 0
+  Correlated features removed : 2
+  Log transform applied       : False
+
+=================================================================
+  OVERALL: ISSUES FOUND -- review above before training
+=================================================================

@@ -1,0 +1,22 @@
+{
+  "rain_intensity_class": {
+    "class_weight": {
+      "0": 0.32577565632458233,
+      "1": 1.625,
+      "2": 3.25,
+      "3": 136.5
+    }
+  },
+  "cloudburst_flag": {
+    "scale_pos_weight": 545.0,
+    "pos": 24,
+    "neg": 13080,
+    "pos_pct": 0.1832
+  },
+  "landslide_risk": {
+    "scale_pos_weight": 318.61,
+    "pos": 41,
+    "neg": 13063,
+    "pos_pct": 0.3129
+  }
+}
