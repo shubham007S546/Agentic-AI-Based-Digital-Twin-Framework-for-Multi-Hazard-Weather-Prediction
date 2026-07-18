@@ -13,9 +13,38 @@ Fixes in this version
   FIX 4: Final validation step checks X splits for any leaked target columns
   FIX 5: train.dtypes[c] used instead of train[c].dtype (safe with any df)
   FIX 6: output named final_preprocessed.csv
+  FIX 7 (NEW): Robust datetime column detection in Step 3. Previously the
+          script assumed a column literally named 'datetime' existed and
+          crashed with KeyError: 'datetime' the moment the source CSV used
+          a different name/case (Date, Timestamp, DateTime) or the datetime
+          came back as an unnamed index column ('Unnamed: 0') from an
+          upstream to_csv() that didn't set index=False. Step 3 now searches
+          for it and renames it instead of assuming.
 
 NEW in this version
 --------------------
+  STEP 5B: Log1p target transform  -- imd_rainfall_mm is heavily right-skewed
+                                      (mostly near-zero hours, rare huge
+                                      values during cloudbursts). Adds
+                                      imd_rainfall_mm_log1p = log1p(mm) as an
+                                      EXTRA target column alongside the raw
+                                      mm column (raw is kept -- thresholds in
+                                      Step 5/6 and reporting all use it).
+                                      Regression models can train on the
+                                      log1p column instead, which usually
+                                      gives a much better-conditioned loss
+                                      surface for skewed rainfall regression;
+                                      just remember to np.expm1() predictions
+                                      back to mm before computing MAE/RMSE.
+  STEP 9B: Isolation Forest outlier flagging -- flags statistically
+                                      anomalous sensor rows (temp, wind,
+                                      CAPE, etc.) and writes them to
+                                      outlier_report.csv for manual review.
+                                      Never drops or alters rows: doing so
+                                      would break rolling/lag continuity for
+                                      neighbouring hours and risks deleting
+                                      genuine extreme-weather signal along
+                                      with real sensor glitches.
   STEP 16: Class weighting        -- balanced weights for rain_intensity_class,
                                       data-driven scale_pos_weight for
                                       cloudburst_flag / landslide_risk
@@ -34,9 +63,9 @@ NEW in this version
 
 Output files (in ml_ready/)
 ----------------------------
-    final_preprocessed.csv          full clean dataset (36 cols)
+    final_preprocessed.csv          full clean dataset (37 cols incl. log1p target)
     X_train.csv / X_val.csv / X_test.csv
-    y_train.csv / y_val.csv / y_test.csv
+    y_train.csv / y_val.csv / y_test.csv    (includes imd_rainfall_mm_log1p)
     scaler_params.csv               mean / std per scaled feature
     sample_weights_train.csv        per-row weights for all 3 classification tasks
     class_weights.json              balanced class weights + scale_pos_weight
@@ -69,6 +98,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from sklearn.ensemble import IsolationForest
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils.class_weight import compute_class_weight
@@ -90,6 +120,20 @@ CV_N_SPLITS               = 5      # temporal CV folds
 UNDERSAMPLE_BLOCK_HOURS   = 24     # size of a time block for undersampling
 UNDERSAMPLE_TARGET_RATIO  = 10     # neg:pos ratio to aim for after undersampling
 RANDOM_STATE              = 42
+
+# Candidate names/aliases used to auto-detect the datetime column in Step 3
+# (case/spacing/underscore-insensitive match against this list).
+DATETIME_ALIASES = ["datetime", "date", "timestamp", "time", "datetimeutc"]
+
+# Columns checked for statistical outliers (Step 9B). Only raw sensor-derived
+# atmospheric/rainfall readings -- never targets, never already-engineered
+# ratios (those would just re-flag the same signal twice).
+OUTLIER_DETECTION_COLS = [
+    "temperature_2m", "dewpoint_2m", "relative_humidity", "surface_pressure",
+    "wind_speed_10m", "wind_gusts_10m", "cloud_cover", "cape",
+    "precipitation_openmeteo", "rain_openmeteo",
+]
+OUTLIER_CONTAMINATION = 0.01   # expected fraction of rows that are sensor anomalies
 
 # Features that overlap with how cloudburst_flag / landslide_risk are DEFINED
 # (cloudburst_flag = rolling_precip_3h >= 100mm), so rolling_precip_24h/72h
@@ -141,6 +185,24 @@ FEATURE_COLS = [
     "precip_lag_1h",
     "precip_lag_3h",
     "precip_lag_6h",
+    "precip_lag_12h",   # NEW -- longer lag windows for hazard/forecast horizon
+    "precip_lag_24h",   # NEW
+    "precip_lag_48h",   # NEW
+    "precip_lag_72h",   # NEW
+    # -- Trend / change features (NEW) --
+    "pressure_change_1h",   # rapid pressure drop often precedes storms
+    "pressure_change_3h",
+    "pressure_change_6h",
+    "temp_change_1h",
+    "temp_change_3h",
+    "temp_change_6h",
+    "dewpoint_change_1h",
+    "dewpoint_change_3h",
+    # -- Antecedent-condition features (NEW, built from precip_lag_1h only --
+    #    i.e. based on PRIOR hours, never the current hour's rain status, to
+    #    avoid leaking the very thing these tasks are trying to predict) --
+    "consecutive_rain_hours",   # how many prior hours were consecutively wet
+    "dry_spell_hours",          # how many prior hours since it last rained
     # -- Engineered features (added in Step 9) --
     "temp_dewpoint_spread",    # temp - dewpoint -> near 0 = saturated air = rain
     "wind_gust_ratio",         # gusts / mean wind -> convective storm signal
@@ -158,6 +220,11 @@ FEATURE_COLS = [
     "day_of_year",
     "season",
     "is_monsoon",
+    "week_of_year",   # NEW
+    "day_of_week",    # NEW
+    "is_weekend",     # NEW -- low predictive value for weather but nearly free;
+                       # kept since some anthropogenic/reporting patterns can
+                       # correlate with day-of-week (station staffing gaps etc.)
 ]
 
 # ==============================================================================
@@ -165,10 +232,17 @@ FEATURE_COLS = [
 # ==============================================================================
 
 TARGET_COLS = [
-    "imd_rainfall_mm",       # Task 1: Regression  -- how much rain?
-    "rain_intensity_class",  # Task 2: Multi-class -- 0=No Rain .. 5=Extreme
-    "cloudburst_flag",       # Task 3: Binary      -- >= 100mm/3h yes/no
-    "landslide_risk",        # Task 4: Binary      -- landslide risk yes/no
+    "imd_rainfall_mm",          # Task 1: Regression  -- how much rain?
+    "imd_rainfall_mm_log1p",    # Task 1 (alt): Regression on log1p(mm) -- less skewed
+    "rain_intensity_class",     # Task 2: Multi-class -- 0=No Rain .. 5=Extreme
+    "cloudburst_flag",          # Task 3: Binary      -- >= 100mm/3h yes/no
+    "landslide_risk",           # Task 4: Binary      -- landslide risk yes/no
+    # -- Alternate simplified binary targets (NEW) -- these are coarser
+    # re-thresholds of imd_rainfall_mm / rain_intensity_class, so they are
+    # TARGETS, never features: using them as X would be direct label leakage.
+    "heavy_rain_flag",          # Task 2b: Binary -- rain_intensity_class >= 3
+    "very_heavy_rain_flag",     # Task 2c: Binary -- rain_intensity_class >= 4
+    "extreme_rain_flag",        # Task 2d: Binary -- rain_intensity_class == 5
 ]
 
 # Columns that must NOT be scaled
@@ -176,6 +250,7 @@ DO_NOT_SCALE = [
     "hour_sin", "hour_cos", "month_sin", "month_cos",
     "hour", "month", "day_of_year", "season", "is_monsoon",
     "wind_direction_10m",
+    "week_of_year", "day_of_week", "is_weekend",   # NEW -- categorical/ordinal calendar
 ]
 
 # ==============================================================================
@@ -212,6 +287,10 @@ def deduplicate_columns(df: pd.DataFrame) -> pd.DataFrame:
         print(f"  No duplicates found.")
 
     # Also explicitly drop any '.1' suffix columns that pandas auto-generated
+    # NOTE: this only removes true '<name>.1' duplicates -- it never touches
+    # the primary 'datetime' column itself, so it can't be the cause of a
+    # missing 'datetime' column downstream (that's a naming mismatch, see
+    # the robust detection added in Step 3 below).
     dot1_cols = [c for c in df.columns if c.endswith(".1")]
     if dot1_cols:
         print(f"  WARNING: Auto-renamed '.1' columns found -- removing:")
@@ -227,8 +306,42 @@ def deduplicate_columns(df: pd.DataFrame) -> pd.DataFrame:
 #  STEP 3 -- PARSE DATETIME + SORT
 # ==============================================================================
 
+def _find_datetime_column(df: pd.DataFrame) -> str:
+    """
+    Robustly locate the datetime column instead of assuming it is literally
+    named 'datetime'. Handles:
+      - different case/spacing/underscores ('Date', 'Time Stamp', 'DateTime')
+      - the datetime having been saved as an unnamed index column upstream,
+        which pandas reads back in as 'Unnamed: 0'
+    Raises a clear error (with the real column list) if nothing matches,
+    instead of a bare KeyError.
+    """
+    if "datetime" in df.columns:
+        return "datetime"
+
+    norm = lambda s: str(s).lower().replace(" ", "").replace("_", "").replace("-", "")
+    for col in df.columns:
+        if norm(col) in DATETIME_ALIASES:
+            return col
+
+    unnamed = [c for c in df.columns if str(c).startswith("Unnamed:")]
+    if unnamed:
+        return unnamed[0]
+
+    raise KeyError(
+        "No datetime-like column found in the input file. "
+        f"Available columns: {list(df.columns)}"
+    )
+
+
 def parse_sort(df: pd.DataFrame) -> pd.DataFrame:
     _header("STEP 3 -- Parse Datetime and Sort")
+
+    dt_col = _find_datetime_column(df)
+    if dt_col != "datetime":
+        print(f"  NOTE: datetime column found as '{dt_col}' -- renaming to 'datetime'")
+        df = df.rename(columns={dt_col: "datetime"})
+
     df["datetime"] = pd.to_datetime(df["datetime"], utc=True, errors="coerce")
     n_bad = df["datetime"].isna().sum()
     if n_bad:
@@ -265,6 +378,40 @@ def drop_bad(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ==============================================================================
+#  STEP 4B -- DROP ROWS WITH MISSING REGRESSION TARGET (imd_rainfall_mm)
+# ==============================================================================
+
+def drop_missing_target(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Some hours in a 20+ year station record simply have no rainfall reading
+    (sensor/reporting gap). imd_rainfall_mm is the ground truth for Task 1
+    AND the raw value that Step 5/6 threshold into rain_intensity_class and
+    cloudburst_flag -- so a missing reading here poisons all three targets
+    at once, not just one column.
+
+    This MUST run before Step 5, because the old code's np.select(...,
+    default=0) silently mapped every NaN-rainfall hour to class 0
+    ('No Rain') -- fabricating a label for an hour where we have no idea
+    what actually happened, rather than admitting the ground truth is
+    unknown. Statistically imputing a rainfall AMOUNT (unlike CAPE or
+    dewpoint, which have physical/seasonal proxies) would be inventing
+    ground truth for a supervised target, which is worse than just
+    dropping the row.
+    """
+    _header("STEP 4B -- Drop Rows with Missing Rainfall Target")
+    n_before = len(df)
+    n_missing = int(df["imd_rainfall_mm"].isna().sum())
+    if n_missing:
+        df = df.dropna(subset=["imd_rainfall_mm"]).reset_index(drop=True)
+        print(f"  DROPPED : {n_missing:,} rows ({n_missing/n_before*100:.2f}%) "
+              f"with missing imd_rainfall_mm (target unknown -- not imputed)")
+    else:
+        print(f"  No missing rainfall readings found.")
+    print(f"  Rows remaining : {len(df):,}")
+    return df
+
+
+# ==============================================================================
 #  STEP 5 -- FIX rain_intensity_class (IMD official thresholds)
 # ==============================================================================
 
@@ -278,6 +425,11 @@ def fix_intensity_class(df: pd.DataFrame) -> pd.DataFrame:
       3 = Heavy        64.5 - 115.5 mm
       4 = Very Heavy   115.6 - 204.4 mm
       5 = Extreme      >= 204.5 mm
+
+    NOTE: by the time this runs, Step 4B has already dropped every row with
+    a missing imd_rainfall_mm, so `default=0` below only ever fires as an
+    unreachable safety net -- it can no longer silently mislabel an unknown
+    reading as 'No Rain' the way the original script did.
     """
     _header("STEP 5 -- Fix rain_intensity_class (IMD thresholds)")
     print("  Before:")
@@ -298,6 +450,46 @@ def fix_intensity_class(df: pd.DataFrame) -> pd.DataFrame:
     print("  After (corrected):")
     for cls, cnt in df["rain_intensity_class"].value_counts().sort_index().items():
         print(f"    Class {cls} ({names.get(cls,'?'):<12}): {cnt:>6,}  ({cnt/len(df)*100:.2f}%)")
+    return df
+
+
+# ==============================================================================
+#  STEP 5B -- LOG1P TARGET TRANSFORM (skew correction for regression)
+# ==============================================================================
+
+def add_log_target(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    imd_rainfall_mm is extremely right-skewed: the vast majority of hours are
+    0 or near-0 mm, with a long thin tail of large values during storms and
+    cloudbursts. Training a regressor directly on raw mm lets those rare
+    large values dominate the squared-error loss and pulls predictions
+    toward over-forecasting typical hours.
+
+    log1p(x) = log(1 + x) compresses that tail while leaving 0 -> 0, so it:
+      - keeps the transform valid for the many exact-zero rainfall hours
+        (plain log(x) would be -inf there)
+      - is monotonic and exactly invertible: mm = expm1(log1p(mm))
+
+    This ADDS a new target column -- it does NOT replace imd_rainfall_mm.
+    Every downstream step that thresholds on real millimetres (Step 5's IMD
+    classes, Step 6's cloudburst flag, reporting, EDA) keeps using the raw
+    mm column untouched. Use imd_rainfall_mm_log1p only as an alternative
+    training target for the Task 1 regressor, and remember to np.expm1()
+    the model's predictions back to mm before computing MAE/RMSE or
+    comparing against the raw-mm baseline.
+    """
+    _header("STEP 5B -- Log1p Target Transform (imd_rainfall_mm)")
+
+    raw = df["imd_rainfall_mm"]
+    print(f"  Raw imd_rainfall_mm       : skew={raw.skew():.2f}  "
+          f"mean={raw.mean():.2f}  max={raw.max():.2f}")
+
+    df["imd_rainfall_mm_log1p"] = np.log1p(raw.clip(lower=0))
+    logged = df["imd_rainfall_mm_log1p"]
+    print(f"  imd_rainfall_mm_log1p     : skew={logged.skew():.2f}  "
+          f"mean={logged.mean():.3f}  max={logged.max():.3f}")
+    print(f"  Added as an EXTRA target column (raw imd_rainfall_mm kept as-is)")
+    print(f"  Inverse transform for predictions: np.expm1(pred)")
     return df
 
 
@@ -352,6 +544,76 @@ def impute_cape(df: pd.DataFrame) -> pd.DataFrame:
     df["cape"] = df["cape"].fillna(0.0)  # catch any remaining NaN
     print(f"  Missing after  : {df['cape'].isna().sum():,}")
     print(f"  CAPE mean      : {df['cape'].mean():.2f} J/kg")
+    return df
+
+
+# ==============================================================================
+#  STEP 7B -- PHYSICALLY DERIVE MISSING dewpoint_2m / wind_u_10m / wind_v_10m
+# ==============================================================================
+
+def derive_missing_met_vars(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    dewpoint_2m and the wind_u_10m/wind_v_10m components are NOT independent
+    measurements -- they are exact mathematical functions of columns that
+    are already fully populated in this dataset:
+
+      dewpoint_2m  <- temperature_2m, relative_humidity   (Magnus formula)
+      wind_u_10m   <- wind_speed_10m, wind_direction_10m  (trigonometry)
+      wind_v_10m   <- wind_speed_10m, wind_direction_10m  (trigonometry)
+
+    So when ~80% of these three columns are missing, the correct fix is to
+    RECOMPUTE the true physical value, not statistically impute a
+    seasonal/climatological filler the way Step 7 does for CAPE. A seasonal
+    median for dewpoint would replace a hard-derivable, hour-specific
+    physical quantity with a constant that ignores that hour's actual
+    temperature and humidity -- much worse than just calculating it.
+
+    Only fills where missing; any value already present is left untouched.
+    Falls back to leaving NaN (caught by Step 14's validation) only if the
+    required inputs are themselves missing for that row.
+    """
+    _header("STEP 7B -- Derive Missing dewpoint_2m / wind_u_10m / wind_v_10m")
+
+    # ---- Dewpoint via Magnus-Tetens formula (T in deg C, RH in %) ----
+    if "dewpoint_2m" in df.columns:
+        n_miss = int(df["dewpoint_2m"].isna().sum())
+        if n_miss and {"temperature_2m", "relative_humidity"}.issubset(df.columns):
+            T = df["temperature_2m"]
+            RH = df["relative_humidity"].clip(lower=0.1, upper=100)  # avoid log(0)
+            a, b = 17.27, 237.7
+            gamma = (a * T) / (b + T) + np.log(RH / 100.0)
+            td_derived = (b * gamma) / (a - gamma)
+            mask = df["dewpoint_2m"].isna()
+            df.loc[mask, "dewpoint_2m"] = td_derived[mask]
+            print(f"  dewpoint_2m  : derived {mask.sum():,} of {n_miss:,} missing "
+                  f"values from temperature_2m + relative_humidity")
+        n_left = int(df["dewpoint_2m"].isna().sum())
+        if n_left:
+            print(f"  dewpoint_2m  : {n_left:,} still missing (inputs also missing)")
+
+    # ---- Wind u/v components via trigonometry ----
+    if {"wind_u_10m", "wind_v_10m"}.issubset(df.columns):
+        n_miss_u = int(df["wind_u_10m"].isna().sum())
+        n_miss_v = int(df["wind_v_10m"].isna().sum())
+        if (n_miss_u or n_miss_v) and {"wind_speed_10m", "wind_direction_10m"}.issubset(df.columns):
+            speed = df["wind_speed_10m"]
+            direction_rad = np.deg2rad(df["wind_direction_10m"])
+            u_derived = -speed * np.sin(direction_rad)
+            v_derived = -speed * np.cos(direction_rad)
+
+            mask_u = df["wind_u_10m"].isna()
+            mask_v = df["wind_v_10m"].isna()
+            df.loc[mask_u, "wind_u_10m"] = u_derived[mask_u]
+            df.loc[mask_v, "wind_v_10m"] = v_derived[mask_v]
+            print(f"  wind_u_10m   : derived {mask_u.sum():,} of {n_miss_u:,} missing "
+                  f"values from wind_speed_10m + wind_direction_10m")
+            print(f"  wind_v_10m   : derived {mask_v.sum():,} of {n_miss_v:,} missing "
+                  f"values from wind_speed_10m + wind_direction_10m")
+        n_left_u = int(df["wind_u_10m"].isna().sum())
+        n_left_v = int(df["wind_v_10m"].isna().sum())
+        if n_left_u or n_left_v:
+            print(f"  wind_u/v_10m : {n_left_u:,}/{n_left_v:,} still missing (inputs also missing)")
+
     return df
 
 
@@ -414,6 +676,55 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
         df["rolling_ratio_3_24"] = (df["rolling_precip_3h"] / (df["rolling_precip_24h"] + 0.1)).clip(upper=10)
         print(f"  + rolling_ratio_3_24     mean={df['rolling_ratio_3_24'].mean():.3f}")
 
+    return df
+
+
+# ==============================================================================
+#  STEP 9B -- ISOLATION FOREST OUTLIER DETECTION (flag + report, never drop)
+# ==============================================================================
+
+def detect_outliers(df: pd.DataFrame, output_dir: Path) -> pd.DataFrame:
+    """
+    Flags statistically anomalous rows (likely sensor glitches) using
+    IsolationForest over the raw atmospheric/rainfall readings.
+
+    Deliberately does NOT drop or modify any row. This is an hourly time
+    series with rolling/lag features -- silently removing a row would blow a
+    hole in every neighbouring row's rolling window and lag features (the
+    exact same reason Step 18's undersampling drops whole time BLOCKS
+    instead of individual rows). An outlier here might also be a genuine
+    extreme weather reading, which is precisely what Tasks 3/4 are trying to
+    predict -- auto-dropping it would remove real signal, not noise.
+
+    Writes outlier_report.csv (datetime + flagged sensor values) so you can
+    review candidates manually and decide case-by-case whether any are
+    confirmed sensor errors worth hand-correcting upstream in Stage A.
+    """
+    _header("STEP 9B -- Isolation Forest Outlier Detection (flag only)")
+
+    cols = [c for c in OUTLIER_DETECTION_COLS if c in df.columns]
+    if not cols:
+        print("  No outlier-detection columns present -- skipping.")
+        return df
+
+    X = df[cols].fillna(df[cols].median())
+    iso = IsolationForest(
+        n_estimators=200,
+        contamination=OUTLIER_CONTAMINATION,
+        random_state=RANDOM_STATE,
+    )
+    flags = iso.fit_predict(X)          # -1 = outlier, 1 = inlier
+    is_outlier = (flags == -1)
+    n_out = int(is_outlier.sum())
+
+    print(f"  Columns checked : {cols}")
+    print(f"  Flagged         : {n_out:,} rows ({n_out/len(df)*100:.2f}%) as statistical anomalies")
+    print(f"  NOT dropped -- see docstring: would break rolling/lag continuity")
+    print(f"  and may remove genuine extreme-weather signal, not just noise.")
+
+    report_cols = ["datetime"] + cols
+    df.loc[is_outlier, report_cols].to_csv(output_dir / "outlier_report.csv", index=False)
+    print(f"  Saved: outlier_report.csv ({n_out:,} flagged rows, for manual review)")
     return df
 
 
@@ -882,6 +1193,13 @@ def save_hyperparam_recommendations(weights_summary: dict, output_dir: Path) -> 
     recs = {
         "task1_regression_imd_rainfall_mm": {
             "model": "XGBRegressor",
+            "target_options": {
+                "raw_mm": "imd_rainfall_mm -- train/evaluate directly in mm",
+                "log1p_mm": "imd_rainfall_mm_log1p -- train on this, then "
+                            "np.expm1(pred) before computing MAE/RMSE in mm. "
+                            "Usually a better-conditioned loss for this "
+                            "heavily right-skewed target.",
+            },
             "search_space": {
                 "n_estimators": [300, 500, 800, 1200],
                 "max_depth": [3, 4, 5, 6, 8],
@@ -892,7 +1210,7 @@ def save_hyperparam_recommendations(weights_summary: dict, output_dir: Path) -> 
                 "reg_alpha": [0, 0.1, 1.0],
                 "reg_lambda": [1.0, 2.0, 5.0],
             },
-            "metric": "RMSE / MAE / R2",
+            "metric": "RMSE / MAE / R2 (computed in mm, after expm1 if log1p target used)",
             "cv": "temporal_cv_folds.csv (blocked, expanding window)",
         },
         "task2_classification_rain_intensity_class": {
@@ -965,7 +1283,7 @@ def build_master_training_file(
     """
     One CSV with everything needed to train Tasks 1 & 2 (regression +
     intensity classification) in a single read:
-      datetime | <35 features> | <4 targets> | sw_rain_intensity_class |
+      datetime | <35 features> | <5 targets incl. log1p> | sw_rain_intensity_class |
       sw_cloudburst_flag | sw_landslide_risk | cv_fold
 
     This does NOT include the time-block-undersampled rows for Tasks 3/4
@@ -1077,6 +1395,14 @@ def _build_report(
             L.append(f"    {cls} ({names.get(cls,'?'):<12}): {cnt:>6,} ({cnt/len(y)*100:.1f}%)  {bar}")
 
     L.append(f"\n{'-'*65}")
+    L.append("  REGRESSION TARGET SKEW -- imd_rainfall_mm vs imd_rainfall_mm_log1p")
+    L.append(f"{'-'*65}")
+    for label, y in [("Train", y_train), ("Val", y_val), ("Test", y_test)]:
+        raw_skew = y["imd_rainfall_mm"].skew()
+        log_skew = y["imd_rainfall_mm_log1p"].skew()
+        L.append(f"  {label:<6}: raw skew={raw_skew:.2f}   log1p skew={log_skew:.2f}")
+
+    L.append(f"\n{'-'*65}")
     L.append("  FEATURE COLUMNS IN X (no target leakage)")
     L.append(f"{'-'*65}")
     new_feats = {"temp_dewpoint_spread","wind_gust_ratio","precip_acceleration",
@@ -1104,6 +1430,8 @@ def _build_report(
   4. hyperparam_recommendations.json -- data-driven search spaces + weights
                                 for all 4 tasks, ready for RandomizedSearchCV
                                 / Optuna using the temporal CV folds above
+  5. Log1p target transform -- imd_rainfall_mm_log1p alongside raw mm, for
+                                a less skewed Task 1 regression target
 """)
 
     L.append(f"{'-'*65}")
@@ -1111,6 +1439,7 @@ def _build_report(
     L.append(f"{'-'*65}")
     L.append("""
   import pandas as pd
+  import numpy as np
   X_train = pd.read_csv("ml_ready/X_train.csv")
   X_val   = pd.read_csv("ml_ready/X_val.csv")
   X_test  = pd.read_csv("ml_ready/X_test.csv")
@@ -1119,9 +1448,14 @@ def _build_report(
   y_test  = pd.read_csv("ml_ready/y_test.csv")
   sw      = pd.read_csv("ml_ready/sample_weights_train.csv")
 
-  Task 1 -- Regression
+  Task 1 -- Regression (two target options)
+    # Option A: raw mm
     y = y_train["imd_rainfall_mm"]
-    XGBRegressor()  |  metrics: MAE, RMSE, R2
+    # Option B: log1p mm (usually better-conditioned for this skew)
+    y = y_train["imd_rainfall_mm_log1p"]
+    ... model.fit(X_train, y) ...
+    preds_mm = np.expm1(model.predict(X_val))   # ONLY if trained on log1p
+    XGBRegressor()  |  metrics: MAE, RMSE, R2 (always computed in mm)
     tune with temporal_cv_folds.csv (see train_xgboost_tuned.py)
 
   Task 2 -- Intensity Classification (0-5)
@@ -1188,13 +1522,17 @@ def main() -> None:
     # ---- Pipeline ----
     df = load(input_path)
     df = deduplicate_columns(df)   # Step 2: MUST be first
-    df = parse_sort(df)            # Step 3
+    df = parse_sort(df)            # Step 3 (now with robust datetime detection)
     df = drop_bad(df)              # Step 4
+    df = drop_missing_target(df)   # Step 4B: drop rows with no rainfall reading (NEW)
     df = fix_intensity_class(df)   # Step 5
+    df = add_log_target(df)        # Step 5B: log1p regression target (NEW)
     df = fix_cloudburst(df)        # Step 6
     df = impute_cape(df)           # Step 7
+    df = derive_missing_met_vars(df)  # Step 7B: physically derive dewpoint/wind u,v (NEW)
     df = fix_lag_nans(df)          # Step 8
     df = engineer_features(df)     # Step 9: +5 accuracy features
+    df = detect_outliers(df, output_dir)  # Step 9B: Isolation Forest (NEW, flag only)
     df = reorder_columns(df)       # Step 10
 
     train, val, test = time_split(df)                          # Step 11
@@ -1230,8 +1568,9 @@ def main() -> None:
     print(f"  y columns        : {list(y_train.columns)}")
     print(f"  Output dir       : {output_dir.resolve()}")
     print(f"\n  Class weights, temporal CV folds, time-block-balanced sets,")
-    print(f"  and hyperparameter search spaces are ready in the output dir.")
-    print(f"  Ready for XGBoost model training -- see train_xgboost_tuned.py")
+    print(f"  log1p regression target, and hyperparameter search spaces are")
+    print(f"  ready in the output dir. Ready for XGBoost model training --")
+    print(f"  see train_xgboost_tuned.py")
 
 
 if __name__ == "__main__":

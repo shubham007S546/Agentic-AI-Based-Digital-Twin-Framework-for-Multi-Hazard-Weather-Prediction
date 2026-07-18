@@ -73,11 +73,49 @@ class SourceLoader:
         self._cfg    = cfg
         self._logger = logger
 
+    # ── Directory resolution ─────────────────────────────────────────────
+
+    def _resolve_source_dir(
+        self, source_key: str, path_fallback_key: Optional[str] = None
+    ) -> Optional[Path]:
+        """
+        Resolve a source's base directory, tolerant of config
+        inconsistencies (some sources use 'download_dir', some
+        'output_dir', some have neither and only exist under
+        paths.weather.<key>).
+        """
+        src_cfg = self._cfg.get("sources", {}).get(source_key, {})
+        for key in ("download_dir", "output_dir"):
+            if key in src_cfg:
+                return Path(src_cfg[key])
+
+        fallback = (
+            self._cfg.get("paths", {})
+            .get("weather", {})
+            .get(path_fallback_key or source_key)
+        )
+        if fallback:
+            self._logger.warning(
+                f"  {source_key}: no download_dir/output_dir in "
+                f"sources.{source_key}; falling back to "
+                f"paths.weather.{path_fallback_key or source_key} = {fallback}"
+            )
+            return Path(fallback)
+
+        self._logger.error(
+            f"  {source_key}: could not resolve a directory from config "
+            f"(checked sources.{source_key}.download_dir/output_dir and "
+            f"paths.weather.{path_fallback_key or source_key})."
+        )
+        return None
+
     # ── Open-Meteo ────────────────────────────────────────────────────────
 
     def load_openmeteo(self) -> Optional[pd.DataFrame]:
         """Load Open-Meteo cleaned parquet or CSV — already hourly UTC."""
-        src_dir = Path(self._cfg["sources"]["openmeteo"]["download_dir"])
+        src_dir = self._resolve_source_dir("openmeteo")
+        if src_dir is None:
+            return None
         clean_dir = src_dir / "cleaned"
 
         # Try parquet first (faster), then CSV
@@ -116,9 +154,14 @@ class SourceLoader:
 
     def load_era5(self) -> Optional[pd.DataFrame]:
         """Load ERA5 monthly cleaned CSVs — already hourly."""
-        src_dir   = Path(self._cfg["sources"]["era5"]["download_dir"])
+        src_dir = self._resolve_source_dir("era5")
+        if src_dir is None:
+            return None
         clean_dir = src_dir / "cleaned"
-        csvs      = sorted(clean_dir.glob("era5_mandi_*_cleaned.csv"))
+        # ERA5 collector saves per-district subfolders:
+        #   cleaned/<district>/era5_<district>_<yyyymm>_cleaned.csv
+        # rglob so this works whether files are flat or nested.
+        csvs = sorted(clean_dir.rglob("era5_mandi_*_cleaned.csv"))
 
         if not csvs:
             self._logger.warning("  ERA5: no cleaned CSVs found.")
@@ -159,9 +202,11 @@ class SourceLoader:
         Load NASA GPM half-hourly cleaned CSVs.
         Resamples to hourly by SUMMING precipitation (mm/hr × 0.5hr = mm).
         """
-        src_dir   = Path(self._cfg["sources"]["nasa_gpm"]["download_dir"])
+        src_dir = self._resolve_source_dir("nasa_gpm")
+        if src_dir is None:
+            return None
         clean_dir = src_dir / "cleaned"
-        csvs      = sorted(clean_dir.glob("nasa_gpm_*_cleaned.csv"))
+        csvs      = sorted(clean_dir.rglob("nasa_gpm_*_cleaned.csv"))
 
         if not csvs:
             self._logger.warning("  NASA GPM: no cleaned CSVs found.")
@@ -213,9 +258,11 @@ class SourceLoader:
         Load IMD daily gridded cleaned CSVs.
         Forward-fills daily values to hourly (constant within each day).
         """
-        src_dir   = Path(self._cfg["sources"]["imd"]["download_dir"])
+        src_dir = self._resolve_source_dir("imd")
+        if src_dir is None:
+            return None
         clean_dir = src_dir / "cleaned"
-        csvs      = sorted(clean_dir.glob("imd_mandi_*_cleaned.csv"))
+        csvs      = sorted(clean_dir.rglob("imd_mandi_*_cleaned.csv"))
 
         if not csvs:
             self._logger.warning("  IMD: no cleaned CSVs found.")
@@ -260,7 +307,9 @@ class SourceLoader:
         Load data.gov.in cleaned CSVs.
         Monthly data forward-filled to hourly.
         """
-        src_dir   = Path(self._cfg["sources"]["datagov"]["download_dir"])
+        src_dir = self._resolve_source_dir("datagov")
+        if src_dir is None:
+            return None
         clean_dir = src_dir / "cleaned"
         csvs      = sorted(clean_dir.glob("*.csv"))
 
@@ -284,6 +333,13 @@ class SourceLoader:
             return None
 
         df = pd.concat(dfs, ignore_index=True)
+
+        # data.gov.in cleaned CSVs prefix every column with 'raw_'
+        # (e.g. 'raw_Date', 'raw_Avg_rainfall') — strip that prefix so the
+        # normal candidate-column matching below (and downstream naming)
+        # works the same as for any other source.
+        if any(c.startswith("raw_") for c in df.columns):
+            df = df.rename(columns={c: c[len("raw_"):] for c in df.columns if c.startswith("raw_")})
 
         # Try to find a date/year/month column
         date_col = self._find_date_column(
@@ -322,6 +378,184 @@ class SourceLoader:
         )
         return df_hourly
 
+    # ── ERA5-Land (daily hydrology) ──────────────────────────────────────
+
+    def load_era5_land(self) -> Optional[pd.DataFrame]:
+        """
+        Load ERA5-Land daily cleaned CSVs for Mandi and forward-fill to
+        hourly.
+
+        Schema (from era5_land_collector.py — NOT guessed):
+          era5_land_root = paths.hydrology.root / "ERA5_Land"
+          cleaned files  = cleaned/era5_land_daily_<district>_<year>.csv
+          columns        = date, district, {var}_mean, {var}_min, {var}_max
+                            for each of: volumetric_soil_water_layer_1,
+                            snow_depth, snowmelt, surface_runoff,
+                            total_evaporation, skin_temperature,
+                            soil_temperature_level_1
+        """
+        hydrology_root = self._cfg.get("paths", {}).get("hydrology", {}).get(
+            "root", "digital_twin/hydrology"
+        )
+        clean_dir = Path(hydrology_root) / "ERA5_Land" / "cleaned"
+        csvs = sorted(clean_dir.glob("era5_land_daily_mandi_*.csv"))
+
+        if not csvs:
+            self._logger.warning(
+                f"  ERA5-Land: no cleaned CSVs found in {clean_dir} "
+                "(expected era5_land_daily_mandi_<year>.csv)."
+            )
+            return None
+
+        self._logger.info(f"  ERA5-Land: loading {len(csvs)} yearly CSV(s)...")
+        dfs = []
+        for f in csvs:
+            try:
+                dfs.append(pd.read_csv(f))
+            except Exception as exc:
+                self._logger.warning(f"  ERA5-Land: failed to read {f.name}: {exc}")
+
+        if not dfs:
+            return None
+
+        df = pd.concat(dfs, ignore_index=True)
+
+        # Filter to Mandi explicitly (file naming already implies this, but
+        # be defensive in case a file ever contains multiple districts).
+        if "district" in df.columns:
+            df = df[df["district"].str.lower() == "mandi"]
+
+        df = self._normalise_datetime(df, ["date", "datetime", "time"])
+        if df is None:
+            return None
+
+        # Daily → hourly forward-fill (same pattern as IMD)
+        df_daily = df.resample("D").mean()
+        df_hourly = df_daily.resample("h").ffill()
+        df_hourly.columns = [f"era5land_{c}" for c in df_hourly.columns]
+        self._logger.info(
+            f"  ERA5-Land: {len(df_hourly):,} hourly rows "
+            f"(forward-filled from daily), {len(df_hourly.columns)} columns"
+        )
+        return df_hourly
+
+    # ── Climate Indices (ENSO / IOD / SOI / CO2) ─────────────────────────
+
+    def load_climate_indices(self) -> Optional[pd.DataFrame]:
+        """
+        Load monthly global climate indices and forward-fill to hourly.
+
+        Schema (confirmed from actual file, not guessed):
+          digital_twin/climate_indices/<ENSO|IOD|SOI|CO2>/cleaned/*.csv
+          columns: date, value, index   (e.g. "2005-01-01,378.63,CO2_MLO")
+
+        These are GLOBAL indices (not district-specific), so no spatial
+        averaging is needed — just pivot each index name into its own
+        column and align on date.
+        """
+        ci_paths = self._cfg.get("paths", {}).get("climate_indices", {})
+        folders = {
+            k: v for k, v in ci_paths.items() if k != "root"
+        }
+        if not folders:
+            # Fallback to the conventional layout if config doesn't list them.
+            base = Path(ci_paths.get("root", "digital_twin/climate_indices"))
+            folders = {
+                name.lower(): str(base / name)
+                for name in ("ENSO", "IOD", "SOI", "CO2")
+            }
+
+        all_rows = []
+        for name, folder in folders.items():
+            clean_dir = Path(folder) / "cleaned"
+            csvs = sorted(clean_dir.glob("*.csv"))
+            if not csvs:
+                self._logger.warning(f"  Climate indices [{name}]: no cleaned CSVs found in {clean_dir}.")
+                continue
+            for f in csvs:
+                try:
+                    df_i = pd.read_csv(f)
+                    if {"date", "value", "index"}.issubset(df_i.columns):
+                        all_rows.append(df_i[["date", "value", "index"]])
+                    else:
+                        self._logger.warning(
+                            f"  Climate indices [{name}]: {f.name} missing expected "
+                            f"columns (date/value/index); has {list(df_i.columns)}. Skipping."
+                        )
+                except Exception as exc:
+                    self._logger.warning(f"  Climate indices [{name}]: failed to read {f.name}: {exc}")
+
+        if not all_rows:
+            self._logger.warning("  Climate indices: no usable data found across ENSO/IOD/SOI/CO2.")
+            return None
+
+        long_df = pd.concat(all_rows, ignore_index=True)
+        long_df["date"] = pd.to_datetime(long_df["date"], errors="coerce", utc=True)
+        long_df = long_df.dropna(subset=["date"])
+
+        wide = long_df.pivot_table(index="date", columns="index", values="value", aggfunc="mean")
+        wide = wide.sort_index()
+
+        # Monthly → hourly forward-fill (same pattern as IMD/ERA5-Land)
+        wide_monthly = wide.resample("ME").ffill()
+        wide_hourly  = wide_monthly.resample("h").ffill()
+        wide_hourly.columns = [f"climidx_{c}" for c in wide_hourly.columns]
+        self._logger.info(
+            f"  Climate indices: {len(wide_hourly):,} hourly rows "
+            f"(forward-filled from monthly), columns: {list(wide_hourly.columns)}"
+        )
+        return wide_hourly
+
+    # ── MODIS EVI (vegetation, 16-day) ───────────────────────────────────
+
+    def load_modis_evi(self) -> Optional[pd.DataFrame]:
+        """
+        Load the Mandi EVI time series (produced by modis_process_evi.py)
+        and forward-fill 16-day observations to hourly.
+
+        Schema (from modis_process_evi.py's own output, not guessed):
+          digital_twin/vegetation/MODIS/cleaned/mandi_evi_timeseries.csv
+          columns: date, evi_mean, good_pixel_pct, n_pixels_total
+        """
+        veg_root = self._cfg.get("paths", {}).get("vegetation", {}).get(
+            "modis", "digital_twin/vegetation/MODIS"
+        )
+        csv_path = Path(veg_root) / "cleaned" / "mandi_evi_timeseries.csv"
+
+        if not csv_path.exists():
+            self._logger.warning(
+                f"  MODIS EVI: {csv_path} not found. Run modis_process_evi.py first."
+            )
+            return None
+
+        try:
+            df = pd.read_csv(csv_path)
+        except Exception as exc:
+            self._logger.warning(f"  MODIS EVI: failed to read {csv_path.name}: {exc}")
+            return None
+
+        df = self._normalise_datetime(df, ["date", "datetime"])
+        if df is None:
+            return None
+
+        # Keep only the numeric signal columns worth carrying forward.
+        keep_cols = [c for c in ("evi_mean", "good_pixel_pct") if c in df.columns]
+        if not keep_cols:
+            self._logger.warning("  MODIS EVI: no usable numeric columns found after parsing.")
+            return None
+        df = df[keep_cols]
+
+        # 16-day (irregular) → hourly forward-fill. resample().ffill() works
+        # fine on an irregular-but-sorted DatetimeIndex — it just carries
+        # each observation forward until the next one arrives.
+        df_hourly = df.resample("h").ffill()
+        df_hourly.columns = [f"modis_{c}" for c in df_hourly.columns]
+        self._logger.info(
+            f"  MODIS EVI: {len(df_hourly):,} hourly rows "
+            f"(forward-filled from 16-day), columns: {list(df_hourly.columns)}"
+        )
+        return df_hourly
+
     # ── Shared helpers ─────────────────────────────────────────────────────
 
     def _normalise_datetime(
@@ -329,21 +563,45 @@ class SourceLoader:
     ) -> Optional[pd.DataFrame]:
         """
         Find a datetime column, parse it, set as UTC index.
-        Returns None if no datetime column found.
+        Handles three cases:
+          1. Datetime already a proper DatetimeIndex (e.g. round-tripped
+             through parquet, which preserves the index) — just localise
+             / convert to UTC.
+          2. Index carries a datetime-like name (e.g. 'datetime') but
+             isn't a DatetimeIndex yet — reset it into a column and parse.
+          3. Datetime lives in one of candidate_cols as a normal column.
+        Returns None if no datetime info found anywhere.
         """
-        col = self._find_date_column(df, candidate_cols)
-        if col is None:
-            self._logger.error(
-                f"  No datetime column found among {candidate_cols}. "
-                f"Available: {list(df.columns[:10])}"
-            )
-            return None
-
         df = df.copy()
-        df[col] = pd.to_datetime(df[col], errors="coerce", utc=True)
-        df = df.dropna(subset=[col])
-        df = df.set_index(col)
-        df.index.name = "datetime"
+
+        if isinstance(df.index, pd.DatetimeIndex):
+            idx = df.index
+            idx = idx.tz_localize("UTC") if idx.tz is None else idx.tz_convert("UTC")
+            df.index = idx
+            df.index.name = "datetime"
+        else:
+            col = self._find_date_column(df, candidate_cols)
+            if col is None and df.index.name and (
+                df.index.name.lower() in [c.lower() for c in candidate_cols]
+            ):
+                # Datetime is sitting in the index but untyped/unparsed —
+                # pull it back into a column so the normal path handles it.
+                idx_name = df.index.name
+                df = df.reset_index()
+                col = idx_name
+
+            if col is None:
+                self._logger.error(
+                    f"  No datetime column or index found among "
+                    f"{candidate_cols}. Available columns: "
+                    f"{list(df.columns[:10])}, index name: {df.index.name!r}"
+                )
+                return None
+
+            df[col] = pd.to_datetime(df[col], errors="coerce", utc=True)
+            df = df.dropna(subset=[col])
+            df = df.set_index(col)
+            df.index.name = "datetime"
 
         # Drop string/object columns — keep only numeric for merge
         df = df.select_dtypes(include="number")
@@ -501,11 +759,14 @@ class DatasetMerger:
         # ── Step 1: Load all sources ─────────────────────────────────────
         self._logger.info("Step 1: Loading all sources...")
         sources: dict[str, Optional[pd.DataFrame]] = {
-            "openmeteo": self._loader.load_openmeteo(),
-            "era5":      self._loader.load_era5(),
-            "gpm":       self._loader.load_nasa_gpm(),
-            "imd":       self._loader.load_imd(),
-            "datagov":   self._loader.load_datagov(),
+            "openmeteo":       self._loader.load_openmeteo(),
+            "era5":            self._loader.load_era5(),
+            "gpm":             self._loader.load_nasa_gpm(),
+            "imd":             self._loader.load_imd(),
+            "datagov":         self._loader.load_datagov(),
+            "era5_land":       self._loader.load_era5_land(),
+            "climate_indices": self._loader.load_climate_indices(),
+            "modis_evi":       self._loader.load_modis_evi(),
         }
 
         available = {k: v for k, v in sources.items() if v is not None}
@@ -514,7 +775,7 @@ class DatasetMerger:
             raise RuntimeError("DatasetMerger: all sources failed to load.")
 
         self._logger.info(
-            f"  Loaded {len(available)}/5 sources: "
+            f"  Loaded {len(available)}/8 sources: "
             f"{list(available.keys())}"
         )
 
@@ -565,8 +826,10 @@ class DatasetMerger:
         if len(dfs) == 1:
             return dfs[0]
 
-        # Outer concat — preserves all timestamps from all sources
-        df = pd.concat(dfs, axis=1, join="outer")
+        # Outer concat — preserves all timestamps from all sources.
+        # sort=False: indices are already individually sorted per-source;
+        # avoids the pandas FutureWarning about implicit sort behavior.
+        df = pd.concat(dfs, axis=1, join="outer", sort=False)
 
         # Sort chronologically
         df = df.sort_index()

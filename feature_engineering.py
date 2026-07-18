@@ -297,9 +297,9 @@ class FeatureEngineer:
     # ──────────────────────────────────────────────────────────────────────
 
     def _filter_overlap(self, df: pd.DataFrame) -> pd.DataFrame:
-        start = pd.Timestamp("2022-01-01", tz="UTC")
+        start = pd.Timestamp("2005-01-01", tz="UTC")
         df = df.loc[start:]
-        self._logger.info(f"After 2022-01-01 filter: {len(df):,} rows")
+        self._logger.info(f"After 2025-01-01 filter: {len(df):,} rows")
 
         core_cols = [
             c for c in [

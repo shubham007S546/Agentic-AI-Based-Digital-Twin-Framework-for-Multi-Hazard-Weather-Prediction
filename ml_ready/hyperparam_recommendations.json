@@ -1,6 +1,10 @@
 {
   "task1_regression_imd_rainfall_mm": {
     "model": "XGBRegressor",
+    "target_options": {
+      "raw_mm": "imd_rainfall_mm -- train/evaluate directly in mm",
+      "log1p_mm": "imd_rainfall_mm_log1p -- train on this, then np.expm1(pred) before computing MAE/RMSE in mm. Usually a better-conditioned loss for this heavily right-skewed target."
+    },
     "search_space": {
       "n_estimators": [
         300,
@@ -48,19 +52,20 @@
         5.0
       ]
     },
-    "metric": "RMSE / MAE / R2",
+    "metric": "RMSE / MAE / R2 (computed in mm, after expm1 if log1p target used)",
     "cv": "temporal_cv_folds.csv (blocked, expanding window)"
   },
   "task2_classification_rain_intensity_class": {
     "model": "XGBClassifier",
     "objective": "multi:softprob",
-    "num_class": 4,
+    "num_class": 5,
     "sample_weight": "sample_weights_train.csv -> sw_rain_intensity_class",
     "class_weight": {
-      "0": 0.32577565632458233,
-      "1": 1.625,
-      "2": 3.25,
-      "3": 136.5
+      "0": 0.2567191202705221,
+      "1": 1.3480984340044744,
+      "2": 2.932360097323601,
+      "3": 53.86368715083799,
+      "4": 301.3
     },
     "search_space": {
       "n_estimators": [
@@ -97,7 +102,7 @@
   "task3_cloudburst_flag": {
     "model": "XGBClassifier",
     "objective": "binary:logistic",
-    "scale_pos_weight_full_train": 545.0,
+    "scale_pos_weight_full_train": 859.857,
     "balanced_dataset": "X_train_cloudburst_flag_balanced.csv / y_train_cloudburst_flag_balanced.csv",
     "note": "Train on the time-block-balanced set with a SMALLER scale_pos_weight (re-derived from the balanced set's own pos/neg counts, printed in the Step 18 log) rather than the raw full-train value above.",
     "search_space": {
@@ -135,7 +140,7 @@
   "task4_landslide_risk": {
     "model": "XGBClassifier",
     "objective": "binary:logistic",
-    "scale_pos_weight_full_train": 318.61,
+    "scale_pos_weight_full_train": 82.309,
     "balanced_dataset": "X_train_landslide_risk_balanced.csv / y_train_landslide_risk_balanced.csv",
     "search_space": {
       "n_estimators": [
