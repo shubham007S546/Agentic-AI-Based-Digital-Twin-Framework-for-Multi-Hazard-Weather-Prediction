@@ -575,12 +575,16 @@ class DatasetMerger:
         df = df.dropna(how="all")
 
         # Trim to configured date range — removes empty rows outside overlap
+        # NOTE: fallback defaults below (2005-01-01 / 2025-12-31) match
+        # config.yaml's dates: block (project.start_year=2005,
+        # end_year=2025). Config values are always used when present;
+        # these are only a safety net if dates: is ever missing.
         dates_cfg  = self._cfg.get("dates", {})
         start_trim = pd.Timestamp(
-            dates_cfg.get("start_date", "2022-01-01"), tz="UTC"
+            dates_cfg.get("start_date", "2005-01-01"), tz="UTC"
         )
         end_trim = pd.Timestamp(
-            dates_cfg.get("end_date", "2024-12-31"), tz="UTC"
+            dates_cfg.get("end_date", "2025-12-31"), tz="UTC"
         )
         before = len(df)
         df = df.loc[start_trim:end_trim]

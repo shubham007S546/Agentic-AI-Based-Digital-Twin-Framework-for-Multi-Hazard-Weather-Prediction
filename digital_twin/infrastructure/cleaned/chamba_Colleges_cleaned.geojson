@@ -1,0 +1,8 @@
+{
+"type": "FeatureCollection",
+"name": "chamba_Colleges_cleaned",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "osm_id": 773643939, "osm_type": "node", "name": "Mountaineering Institute Bharmour", "tags": { "amenity": "college", "name": "Mountaineering Institute Bharmour" } }, "geometry": { "type": "Point", "coordinates": [ 76.5324437, 32.4408374 ] } }
+]
+}

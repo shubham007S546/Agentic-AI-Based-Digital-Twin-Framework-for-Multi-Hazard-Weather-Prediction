@@ -432,7 +432,47 @@
       "vector_checksum_sha256": "f931880ba0a23e6b2c7d5aa854884873446f12568a7acb8d853b4d4cd5edcf5c",
       "csv_file": "C:\\Users\\shubh\\Downloads\\Weather_Data_Project_Source1\\Weather_Data_Project\\digital_twin\\infrastructure\\Hospitals\\chamba_Primary_Health_Centres.csv",
       "cleaned_file": "C:\\Users\\shubh\\Downloads\\Weather_Data_Project_Source1\\Weather_Data_Project\\digital_twin\\infrastructure\\cleaned\\chamba_Primary_Health_Centres_cleaned.geojson"
+    },
+    "chamba:Schools": {
+      "district": "chamba",
+      "category": "Schools",
+      "status": "completed",
+      "feature_count": 31,
+      "updated_at": "2026-07-16T15:38:47.499613",
+      "vector_file": "C:\\Users\\shubh\\Downloads\\Weather_Data_Project_Source1\\Weather_Data_Project\\digital_twin\\infrastructure\\Schools\\chamba_Schools.geojson",
+      "vector_checksum_sha256": "52210c0041f6c9757e2383fe73b16586567233d4c2342e66353e341e819db1cb",
+      "csv_file": "C:\\Users\\shubh\\Downloads\\Weather_Data_Project_Source1\\Weather_Data_Project\\digital_twin\\infrastructure\\Schools\\chamba_Schools.csv",
+      "cleaned_file": "C:\\Users\\shubh\\Downloads\\Weather_Data_Project_Source1\\Weather_Data_Project\\digital_twin\\infrastructure\\cleaned\\chamba_Schools_cleaned.geojson"
+    },
+    "chamba:Colleges": {
+      "district": "chamba",
+      "category": "Colleges",
+      "status": "completed",
+      "feature_count": 1,
+      "updated_at": "2026-07-16T15:40:20.288461",
+      "vector_file": "C:\\Users\\shubh\\Downloads\\Weather_Data_Project_Source1\\Weather_Data_Project\\digital_twin\\infrastructure\\Schools\\chamba_Colleges.geojson",
+      "vector_checksum_sha256": "711fd889a80775abbbe9aa58ce861f738a9b0ea32f5dc5ff6266936926a6b95c",
+      "csv_file": "C:\\Users\\shubh\\Downloads\\Weather_Data_Project_Source1\\Weather_Data_Project\\digital_twin\\infrastructure\\Schools\\chamba_Colleges.csv",
+      "cleaned_file": "C:\\Users\\shubh\\Downloads\\Weather_Data_Project_Source1\\Weather_Data_Project\\digital_twin\\infrastructure\\cleaned\\chamba_Colleges_cleaned.geojson"
+    },
+    "chamba:Police_Stations": {
+      "district": "chamba",
+      "category": "Police_Stations",
+      "status": "completed",
+      "feature_count": 8,
+      "updated_at": "2026-07-16T15:41:34.196238",
+      "vector_file": "C:\\Users\\shubh\\Downloads\\Weather_Data_Project_Source1\\Weather_Data_Project\\digital_twin\\infrastructure\\Government\\chamba_Police_Stations.geojson",
+      "vector_checksum_sha256": "2c53991b341e498942880e9d3db2afcd3465c4f368f4fcbcd8d45cd527ce7192",
+      "csv_file": "C:\\Users\\shubh\\Downloads\\Weather_Data_Project_Source1\\Weather_Data_Project\\digital_twin\\infrastructure\\Government\\chamba_Police_Stations.csv",
+      "cleaned_file": "C:\\Users\\shubh\\Downloads\\Weather_Data_Project_Source1\\Weather_Data_Project\\digital_twin\\infrastructure\\cleaned\\chamba_Police_Stations_cleaned.geojson"
+    },
+    "chamba:Fire_Stations": {
+      "district": "chamba",
+      "category": "Fire_Stations",
+      "status": "empty",
+      "feature_count": 0,
+      "updated_at": "2026-07-16T15:42:48.765454"
     }
   },
-  "last_updated": "2026-07-05T13:02:57.432658"
+  "last_updated": "2026-07-16T15:42:48.765454"
 }

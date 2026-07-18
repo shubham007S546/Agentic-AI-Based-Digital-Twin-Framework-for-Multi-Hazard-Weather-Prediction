@@ -2,7 +2,7 @@
   {
     "dataset_name": "District Census Handbook Mandi 2011 - Part A (Village & Town Directory)",
     "source_url": "https://censusindia.gov.in/nada/index.php/catalog/480/download/1568/DH_2011_0205_PART_A_DCHB_MANDI.pdf",
-    "download_date": "2026-07-05T05:12:44.579514+00:00",
+    "download_date": "2026-07-17T04:31:17.835887+00:00",
     "district": "Mandi",
     "file_name": "mandi_mandi_dchb_part_a_village_town_directory.pdf",
     "file_format": "pdf",
@@ -17,7 +17,7 @@
   {
     "dataset_name": "District Census Handbook Mandi 2011 - Part B (Primary Census Abstract)",
     "source_url": "https://censusindia.gov.in/nada/index.php/catalog/481/download/1572/DH_2011_0205_PART_B_DCHB_MANDI.pdf",
-    "download_date": "2026-07-05T05:16:12.927383+00:00",
+    "download_date": "2026-07-17T04:34:39.540594+00:00",
     "district": "Mandi",
     "file_name": "mandi_mandi_dchb_part_b_primary_census_abstract.pdf",
     "file_format": "pdf",
@@ -32,7 +32,7 @@
   {
     "dataset_name": "District Census Handbook Kullu 2011 - Part A (Village & Town Directory)",
     "source_url": "https://censusindia.gov.in/nada/index.php/catalog/476/download/1552/DH_2011_0204_PART_A_DCHB_KULLU.pdf",
-    "download_date": "2026-07-05T05:17:33.893145+00:00",
+    "download_date": "2026-07-17T04:35:28.128240+00:00",
     "district": "Kullu",
     "file_name": "kullu_kullu_dchb_part_a_village_town_directory.pdf",
     "file_format": "pdf",
@@ -47,7 +47,7 @@
   {
     "dataset_name": "District Census Handbook Kullu 2011 - Part B (Primary Census Abstract)",
     "source_url": "https://censusindia.gov.in/nada/index.php/catalog/477/download/1556/DH_2011_0204_PART_B_DCHB_KULLU.pdf",
-    "download_date": "2026-07-05T05:18:01.337361+00:00",
+    "download_date": "2026-07-17T04:36:06.462381+00:00",
     "district": "Kullu",
     "file_name": "kullu_kullu_dchb_part_b_primary_census_abstract.pdf",
     "file_format": "pdf",
@@ -62,7 +62,7 @@
   {
     "dataset_name": "DCHB Village Amenities CSV - Kullu (2011)",
     "source_url": "https://www.censusindia.gov.in/datagov/TDVD_Files/DCHB_Village_Amenities-HIMACHAL_PRADESH-Kullu-026.csv",
-    "download_date": "2026-07-05T05:18:01.661629+00:00",
+    "download_date": "2026-07-17T04:36:06.907247+00:00",
     "district": "Kullu",
     "file_name": "kullu_kullu_village_amenities.csv",
     "file_format": "csv",
@@ -77,7 +77,7 @@
   {
     "dataset_name": "DCHB Town Amenities CSV - Kullu (2011)",
     "source_url": "https://www.censusindia.gov.in/datagov/TDVD_Files/DCHB_Town_Amenities-HIMACHAL_PRADESH-KULLU-026.csv",
-    "download_date": "2026-07-05T05:18:01.791817+00:00",
+    "download_date": "2026-07-17T04:36:07.131933+00:00",
     "district": "Kullu",
     "file_name": "kullu_kullu_town_amenities.csv",
     "file_format": "csv",
@@ -92,7 +92,7 @@
   {
     "dataset_name": "District Census Handbook Chamba 2011 - Part A (Village & Town Directory)",
     "source_url": "https://censusindia.gov.in/nada/index.php/catalog/468/download/1520/DH_2011_0201_PART_A_DCHB_CHAMBA.pdf",
-    "download_date": "2026-07-05T05:19:20.017870+00:00",
+    "download_date": "2026-07-17T04:37:30.684807+00:00",
     "district": "Chamba",
     "file_name": "chamba_chamba_dchb_part_a_village_town_directory.pdf",
     "file_format": "pdf",
@@ -107,7 +107,7 @@
   {
     "dataset_name": "District Census Handbook Chamba 2011 - Part B (Primary Census Abstract)",
     "source_url": "https://censusindia.gov.in/nada/index.php/catalog/469/download/1524/DH_2011_0201_PART_B_DCHB_CHAMBA.pdf",
-    "download_date": "2026-07-05T05:20:33.928097+00:00",
+    "download_date": "2026-07-17T04:38:42.820769+00:00",
     "district": "Chamba",
     "file_name": "chamba_chamba_dchb_part_b_primary_census_abstract.pdf",
     "file_format": "pdf",
