@@ -1,0 +1,52 @@
+{
+  "crs": "EPSG:4326",
+  "buffer_deg": 0.1,
+  "combined_download_area": {
+    "north": 33.308550000000004,
+    "west": 75.70496,
+    "south": 31.12813,
+    "east": 77.96961999999999
+  },
+  "combined_area_note": "Informational only -- one CDS request is submitted per district per year per variable, each using 'district_download_areas' below, not this combined extent.",
+  "district_download_areas": {
+    "mandi": {
+      "north": 32.173770000000005,
+      "west": 76.52198,
+      "south": 31.12813,
+      "east": 77.49435
+    },
+    "kullu": {
+      "north": 32.51561,
+      "west": 76.83945,
+      "south": 31.24121,
+      "east": 77.96961999999999
+    },
+    "chamba": {
+      "north": 33.308550000000004,
+      "west": 75.70496,
+      "south": 32.0786,
+      "east": 76.98395
+    }
+  },
+  "districts": {
+    "mandi": {
+      "north": 32.07377,
+      "south": 31.22813,
+      "west": 76.62198,
+      "east": 77.39435
+    },
+    "kullu": {
+      "north": 32.41561,
+      "south": 31.34121,
+      "west": 76.93945,
+      "east": 77.86962
+    },
+    "chamba": {
+      "north": 33.20855,
+      "south": 32.1786,
+      "west": 75.80496,
+      "east": 76.88395
+    }
+  },
+  "generated_at": "2026-07-17T09:57:12.255510"
+}

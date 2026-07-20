@@ -1,0 +1,30 @@
+{
+  "index": "SOI",
+  "description": "Southern Oscillation Index",
+  "source_url": "https://www.cpc.ncep.noaa.gov/data/indices/soi",
+  "source_agency": "NOAA Climate Prediction Center (CPC)",
+  "license": "Public domain (U.S. Government work)",
+  "raw_file": "digital_twin\\climate_indices\\SOI\\raw\\soi",
+  "raw_file_sha256": "d462b58f42c5ecb207db500d1bbd2f1630c6c40050d328abc510f0c292d5d9ec",
+  "cleaned_file": "digital_twin\\climate_indices\\SOI\\cleaned\\soi_2005_2025.csv",
+  "cleaned_file_sha256": "f8de9c61ee98f9bb8f0cd020129f325b11a3f6afb03f396267a115a215d9715a",
+  "requested_time_period": {
+    "start_year": 2005,
+    "end_year": 2025
+  },
+  "actual_time_period": {
+    "start_date": "2005-01-01",
+    "end_date": "2025-12-01"
+  },
+  "record_count": 252,
+  "temporal_resolution": "monthly",
+  "columns": [
+    "date",
+    "value",
+    "index"
+  ],
+  "collected_at_utc": "2026-07-04T13:26:10.563571+00:00",
+  "collector": "climate_index_collector",
+  "collector_version": "1.0.0",
+  "history": []
+}

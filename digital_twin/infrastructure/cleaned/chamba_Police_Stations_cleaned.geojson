@@ -1,0 +1,15 @@
+{
+"type": "FeatureCollection",
+"name": "chamba_Police_Stations_cleaned",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "osm_id": 540052521, "osm_type": "node", "name": "Holi Police Station", "tags": { "amenity": "police", "name": "Holi Police Station" } }, "geometry": { "type": "Point", "coordinates": [ 76.5577044, 32.3263179 ] } },
+{ "type": "Feature", "properties": { "osm_id": 2903021863, "osm_type": "node", "name": "Police Station Bharmaur", "tags": { "amenity": "police", "name": "Police Station Bharmaur" } }, "geometry": { "type": "Point", "coordinates": [ 76.5289393, 32.4466109 ] } },
+{ "type": "Feature", "properties": { "osm_id": 2902903861, "osm_type": "node", "name": "Police Station  Bakloh", "tags": { "addr:city": "Bakloh", "addr:postcode": "176301", "amenity": "police", "name": "Police Station  Bakloh" } }, "geometry": { "type": "Point", "coordinates": [ 75.9246201, 32.4666342 ] } },
+{ "type": "Feature", "properties": { "osm_id": 594714181, "osm_type": "way", "name": "Police station", "tags": { "amenity": "police", "building": "yes", "name": "Police station" } }, "geometry": { "type": "Polygon", "coordinates": [ [ [ 75.9643213, 32.5326684 ], [ 75.9646282, 32.532847 ], [ 75.964875, 32.5330554 ], [ 75.9649727, 32.5331604 ], [ 75.9650296, 32.5331288 ], [ 75.9650876, 32.5329309 ], [ 75.9650915, 32.5328787 ], [ 75.9644788, 32.5324909 ], [ 75.9644262, 32.5325417 ], [ 75.9643213, 32.5326684 ] ] ] } },
+{ "type": "Feature", "properties": { "osm_id": 2902909167, "osm_type": "node", "name": "Police Station Dalhousie", "tags": { "amenity": "police", "name": "Police Station Dalhousie" } }, "geometry": { "type": "Point", "coordinates": [ 75.976231, 32.5366047 ] } },
+{ "type": "Feature", "properties": { "osm_id": 716376701, "osm_type": "node", "name": "Police Station Sultanpur", "tags": { "amenity": "police", "name": "Police Station Sultanpur" } }, "geometry": { "type": "Point", "coordinates": [ 76.1175354, 32.5603108 ] } },
+{ "type": "Feature", "properties": { "osm_id": 299338989, "osm_type": "node", "name": "Road closed", "tags": { "amenity": "police", "name": "Road closed" } }, "geometry": { "type": "Point", "coordinates": [ 75.8617488, 32.8698242 ] } },
+{ "type": "Feature", "properties": { "osm_id": 774382360, "osm_type": "node", "name": "Bhanodi Police Post", "tags": { "amenity": "police", "name": "Bhanodi Police Post" } }, "geometry": { "type": "Point", "coordinates": [ 76.180578, 32.9622581 ] } }
+]
+}

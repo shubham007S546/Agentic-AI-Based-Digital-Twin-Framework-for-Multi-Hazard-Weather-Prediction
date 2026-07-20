@@ -1,0 +1,17 @@
+{
+"type": "FeatureCollection",
+"name": "mandi_Police_Stations_cleaned",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "osm_id": 583541932, "osm_type": "node", "name": "Police Station, Sundernagar", "tags": { "amenity": "police", "name": "Police Station, Sundernagar" } }, "geometry": { "type": "Point", "coordinates": [ 76.8843342, 31.5154506 ] } },
+{ "type": "Feature", "properties": { "osm_id": 7113550525, "osm_type": "node", "name": "Police House", "tags": { "amenity": "police", "name": "Police House" } }, "geometry": { "type": "Point", "coordinates": [ 76.8846256, 31.5173964 ] } },
+{ "type": "Feature", "properties": { "osm_id": 1195234854, "osm_type": "node", "name": null, "tags": { "amenity": "police" } }, "geometry": { "type": "Point", "coordinates": [ 76.8349647, 31.6317904 ] } },
+{ "type": "Feature", "properties": { "osm_id": 2902817480, "osm_type": "node", "name": "Police Station Joginder Nagar", "tags": { "amenity": "police", "name": "Police Station Joginder Nagar" } }, "geometry": { "type": "Point", "coordinates": [ 76.7921963, 31.9895642 ] } },
+{ "type": "Feature", "properties": { "osm_id": 583231091, "osm_type": "node", "name": "Sundernagar Colony Police Station", "tags": { "amenity": "police", "name": "Sundernagar Colony Police Station" } }, "geometry": { "type": "Point", "coordinates": [ 76.9084089, 31.5317179 ] } },
+{ "type": "Feature", "properties": { "osm_id": 5577786686, "osm_type": "node", "name": "Woman Police Station", "tags": { "amenity": "police", "name": "Woman Police Station" } }, "geometry": { "type": "Point", "coordinates": [ 76.943878, 31.7033484 ] } },
+{ "type": "Feature", "properties": { "osm_id": 5578095775, "osm_type": "node", "name": "Police Lines Mandi", "tags": { "amenity": "police", "branch": "Mandi", "name": "Police Lines Mandi" } }, "geometry": { "type": "Point", "coordinates": [ 76.9357126, 31.7058375 ] } },
+{ "type": "Feature", "properties": { "osm_id": 1834133318, "osm_type": "node", "name": "Police Station Sadar Mandi", "tags": { "amenity": "police", "name": "Police Station Sadar Mandi" } }, "geometry": { "type": "Point", "coordinates": [ 76.9358386, 31.7079865 ] } },
+{ "type": "Feature", "properties": { "osm_id": 9838860010, "osm_type": "node", "name": "Aut Police Station", "tags": { "amenity": "police", "name": "Aut Police Station" } }, "geometry": { "type": "Point", "coordinates": [ 77.2019574, 31.712001 ] } },
+{ "type": "Feature", "properties": { "osm_id": 2902782566, "osm_type": "node", "name": "Police station Aut", "tags": { "amenity": "police", "name": "Police station Aut" } }, "geometry": { "type": "Point", "coordinates": [ 77.2083245, 31.7436305 ] } }
+]
+}

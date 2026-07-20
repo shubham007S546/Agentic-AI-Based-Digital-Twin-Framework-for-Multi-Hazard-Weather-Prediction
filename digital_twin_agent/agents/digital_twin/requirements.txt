@@ -1,0 +1,9 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+langgraph>=0.1
+shapely>=2.0
+python-dotenv>=1.0
+
+# optional -- only needed if you set REDIS_URL
+redis>=5.0

@@ -1,0 +1,28 @@
+{
+  "model_class": "EnsembleModel",
+  "task_type": "regression",
+  "config": {
+    "task_type": "regression",
+    "data_dir": "..\\ml_ready",
+    "target_column": "imd_rainfall_mm",
+    "random_seed": 42,
+    "n_jobs": -1,
+    "use_sample_weights": true,
+    "use_class_weights": false,
+    "experiment_name": "ensemble_v1",
+    "artifacts_dir": "artifacts",
+    "model_name": "ensemble",
+    "target_transform": "none",
+    "base_algorithms": [
+      "random_forest",
+      "xgboost",
+      "lightgbm"
+    ],
+    "ensemble_method": "stacking",
+    "meta_learner": "ridge",
+    "meta_learner_alpha": 1.0,
+    "cv_folds": 5,
+    "weights": null,
+    "use_proba_for_classification_stacking": true
+  }
+}

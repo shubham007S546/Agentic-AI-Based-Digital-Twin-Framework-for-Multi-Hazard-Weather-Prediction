@@ -1,0 +1,116 @@
+version: '3.8'
+
+services:
+  # ── Core Infrastructure ──────────────────────────────────────────────────────
+  
+  postgres:
+    image: postgres:16-alpine
+    container_name: weather_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: weather_twin
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d weather_twin"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - weather-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: weather_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - weather-net
+
+  minio:
+    image: minio/minio:latest
+    container_name: weather_minio
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadminpassword
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - weather-net
+
+
+  # ── Application Services ────────────────────────────────────────────────────
+  
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: weather_api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      - APP_ENV=production
+      - DATABASE_URL=postgresql+asyncpg://postgres:password@postgres:5432/weather_twin
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=super-secret-production-key-change-me
+      - S3_ENDPOINT_URL=http://minio:9000
+      - S3_ACCESS_KEY=minioadmin
+      - S3_SECRET_KEY=minioadminpassword
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    ports:
+      - "8000:8000"
+    networks:
+      - weather-net
+
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: weather_celery
+    command: ["python", "-m", "celery", "-A", "app.workers.celery_app.celery", "worker", "--loglevel=info", "-B"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - APP_ENV=production
+      - DATABASE_URL=postgresql+asyncpg://postgres:password@postgres:5432/weather_twin
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    networks:
+      - weather-net
+
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:
+
+networks:
+  weather-net:
+    driver: bridge

@@ -1,0 +1,30 @@
+{
+  "index": "CO2",
+  "description": "Atmospheric CO2 concentration, Mauna Loa Observatory (monthly mean, ppm)",
+  "source_url": "https://gml.noaa.gov/webdata/ccgg/trends/co2/co2_mm_mlo.txt",
+  "source_agency": "NOAA Global Monitoring Laboratory (GML)",
+  "license": "Public domain (U.S. Government work)",
+  "raw_file": "digital_twin\\climate_indices\\CO2\\raw\\co2_mm_mlo.txt",
+  "raw_file_sha256": "5a355e26c5cd9b97bf0ba57d644f177be82bb100a2ffe002d9c05cc243738176",
+  "cleaned_file": "digital_twin\\climate_indices\\CO2\\cleaned\\co2_2005_2025.csv",
+  "cleaned_file_sha256": "574547e46d8b2449b9e0fad04081edb04db5e177f5df455dcca317b2f68c3d3d",
+  "requested_time_period": {
+    "start_year": 2005,
+    "end_year": 2025
+  },
+  "actual_time_period": {
+    "start_date": "2005-01-01",
+    "end_date": "2025-12-01"
+  },
+  "record_count": 252,
+  "temporal_resolution": "monthly",
+  "columns": [
+    "date",
+    "value",
+    "index"
+  ],
+  "collected_at_utc": "2026-07-04T13:26:07.995510+00:00",
+  "collector": "climate_index_collector",
+  "collector_version": "1.0.0",
+  "history": []
+}

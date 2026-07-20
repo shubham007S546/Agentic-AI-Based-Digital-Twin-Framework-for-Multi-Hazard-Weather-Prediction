@@ -1,0 +1,15 @@
+{
+"type": "FeatureCollection",
+"name": "kullu_Towns",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "osm_id": 8018722460, "osm_type": "node", "name": "Rampur Bushahr", "tags": { "name": "Rampur Bushahr", "place": "town" } }, "geometry": { "type": "Point", "coordinates": [ 77.6302099, 31.4486551 ] } },
+{ "type": "Feature", "properties": { "osm_id": 3099885888, "osm_type": "node", "name": "Banjar", "tags": { "name": "Banjar", "name:hi": "बंजार", "place": "town", "postal_code": "175123", "source": "AND", "wikidata": "Q8180265", "wikipedia": "en:Banjar, India" } }, "geometry": { "type": "Point", "coordinates": [ 77.3450995, 31.6371886 ] } },
+{ "type": "Feature", "properties": { "osm_id": 4397107911, "osm_type": "node", "name": "Manikaran", "tags": { "name": "Manikaran", "name:hi": "मणिकर्ण", "name:kn": "ಮಣಿಕರಣ್", "name:ta": "மணிகரண்", "place": "town", "wikidata": "Q83473" } }, "geometry": { "type": "Point", "coordinates": [ 77.3464072, 32.0273214 ] } },
+{ "type": "Feature", "properties": { "osm_id": 342116240, "osm_type": "node", "name": "Bhuntar", "tags": { "name": "Bhuntar", "name:zh": "布恩塔尔", "place": "town", "wikidata": "Q796541" } }, "geometry": { "type": "Point", "coordinates": [ 77.1436237, 31.8875195 ] } },
+{ "type": "Feature", "properties": { "osm_id": 287468687, "osm_type": "node", "name": "Kullu", "tags": { "capital": "5", "name": "Kullu", "name:en": "Kullu", "name:he": "קולו", "name:hi": "कुल्लू", "name:kn": "ಕುಲ್ಲು", "name:ur": "کُلّو", "name:zh": "古卢", "place": "town", "population": "18000", "postal_code": "175100", "wikidata": "Q83442", "wikipedia": "en:Kullu" } }, "geometry": { "type": "Point", "coordinates": [ 77.1089232, 31.9578974 ] } },
+{ "type": "Feature", "properties": { "osm_id": 756382658, "osm_type": "node", "name": "Kasol", "tags": { "name": "Kasol", "name:en": "Kasol", "name:he": "קאסול", "name:hi": "कसोल", "place": "town", "wikidata": "Q4216682" } }, "geometry": { "type": "Point", "coordinates": [ 77.3166036, 32.0104317 ] } },
+{ "type": "Feature", "properties": { "osm_id": 861687418, "osm_type": "node", "name": "Naggar", "tags": { "name": "Naggar", "name:hi": "नग्गर", "name:zh": "纳加尔", "place": "town", "wikidata": "Q4311529" } }, "geometry": { "type": "Point", "coordinates": [ 77.1640042, 32.1132488 ] } },
+{ "type": "Feature", "properties": { "osm_id": 245773022, "osm_type": "node", "name": "Manali", "tags": { "name": "Manali", "name:en": "Manali", "name:he": "מנאלי", "name:hi": "मनाली", "name:ja": "マナリ", "name:kn": "ಮನಾಲಿ", "name:ml": "മണാലി", "name:ru": "Манали", "name:ta": "மணாலி", "name:zh": "马纳利", "place": "town", "population": "8000", "postal_code": "175131", "wikidata": "Q83443", "wikipedia": "en:Manali, Himachal Pradesh" } }, "geometry": { "type": "Point", "coordinates": [ 77.1872926, 32.2454608 ] } }
+]
+}

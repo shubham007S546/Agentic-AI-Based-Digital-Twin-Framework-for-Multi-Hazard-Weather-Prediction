@@ -1,0 +1,31 @@
+{
+  "run_timestamp": "2026-07-16T10:11:44.493986+00:00",
+  "start_date": "2005-01-01",
+  "end_date": "2025-12-31",
+  "districts": {
+    "mandi": {
+      "sources_tried": [
+        "cwc",
+        "nhp",
+        "wris"
+      ],
+      "sources_succeeded": []
+    },
+    "kullu": {
+      "sources_tried": [
+        "cwc",
+        "nhp",
+        "wris"
+      ],
+      "sources_succeeded": []
+    },
+    "chamba": {
+      "sources_tried": [
+        "cwc",
+        "nhp",
+        "wris"
+      ],
+      "sources_succeeded": []
+    }
+  }
+}

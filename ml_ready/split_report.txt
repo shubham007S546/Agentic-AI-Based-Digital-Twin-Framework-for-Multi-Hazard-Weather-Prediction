@@ -1,0 +1,166 @@
+=================================================================
+  MANDI DISTRICT -- FINAL PREPROCESSING REPORT
+=================================================================
+
+Dataset  : 166,561 rows x 51 columns
+Features : 45  |  Targets : 5
+
+-----------------------------------------------------------------
+  SPLITS
+-----------------------------------------------------------------
+  Train : 144,624 rows  2005-01-01 -> 2023-06-30
+  Val   :  4,416 rows  2023-07-01 -> 2023-12-31
+  Test  : 17,521 rows  2024-01-01 -> 2025-12-31
+
+-----------------------------------------------------------------
+  CLASS DISTRIBUTION -- rain_intensity_class
+-----------------------------------------------------------------
+
+  Train:
+    0 (No Rain     ): 112,671 (77.9%)  ###############################
+    1 (Light       ): 21,456 (14.8%)  #####
+    2 (Moderate    ):  9,864 (6.8%)  ##
+    3 (Heavy       ):    537 (0.4%)  
+    4 (Very Heavy  ):     96 (0.1%)  
+
+  Val:
+    0 (No Rain     ):  3,336 (75.5%)  ##############################
+    1 (Light       ):    552 (12.5%)  #####
+    2 (Moderate    ):    384 (8.7%)  ###
+    3 (Heavy       ):     72 (1.6%)  
+    4 (Very Heavy  ):     72 (1.6%)  
+
+  Test:
+    0 (No Rain     ): 13,657 (77.9%)  ###############################
+    1 (Light       ):  2,112 (12.1%)  ####
+    2 (Moderate    ):  1,608 (9.2%)  ###
+    3 (Heavy       ):    120 (0.7%)  
+    4 (Very Heavy  ):     24 (0.1%)  
+
+-----------------------------------------------------------------
+  REGRESSION TARGET SKEW -- imd_rainfall_mm vs imd_rainfall_mm_log1p
+-----------------------------------------------------------------
+  Train : raw skew=5.31   log1p skew=1.65
+  Val   : raw skew=4.77   log1p skew=1.61
+  Test  : raw skew=4.13   log1p skew=1.66
+
+-----------------------------------------------------------------
+  FEATURE COLUMNS IN X (no target leakage)
+-----------------------------------------------------------------
+    1. temperature_2m
+    2. dewpoint_2m
+    3. relative_humidity
+    4. surface_pressure
+    5. wind_speed_10m
+    6. wind_direction_10m
+    7. wind_gusts_10m
+    8. wind_u_10m
+    9. wind_v_10m
+   10. cloud_cover
+   11. cape
+   12. precipitation_openmeteo
+   13. rain_openmeteo
+   14. snowfall
+   15. rolling_precip_3h
+   16. rolling_precip_6h
+   17. rolling_precip_24h
+   18. rolling_precip_72h
+   19. precip_lag_1h
+   20. precip_lag_3h
+   21. precip_lag_6h
+   22. relative_humidity_change_1h
+   23. relative_humidity_change_3h
+   24. temp_dewpoint_spread  <-- engineered
+   25. wind_gust_ratio  <-- engineered
+   26. precip_acceleration  <-- engineered
+   27. humidity_cape_interact  <-- engineered
+   28. rolling_ratio_3_24  <-- engineered
+   29. hour_sin
+   30. hour_cos
+   31. month_sin
+   32. month_cos
+   33. hour
+   34. month
+   35. day_of_year
+   36. season
+   37. is_monsoon
+   38. latitude
+   39. longitude
+   40. elevation
+   41. slope
+   42. aspect
+   43. terrain_ruggedness_index
+   44. distance_to_river_km
+   45. land_cover
+
+-----------------------------------------------------------------
+  IMBALANCE HANDLING (new)
+-----------------------------------------------------------------
+
+  1. Class weighting        -- class_weights.json + sample_weights_train.csv
+                                (balanced weights for rain_intensity_class,
+                                data-driven scale_pos_weight for the two
+                                binary rare-event tasks)
+  2. Weighted temporal CV   -- temporal_cv_folds.csv (blocked, expanding
+                                window, never shuffled) + per-fold
+                                scale_pos_weight in temporal_cv_fold_weights.csv
+  3. Time-block undersampling -- X_train_<target>_balanced.csv /
+                                y_train_<target>_balanced.csv for
+                                cloudburst_flag and landslide_risk (whole
+                                negative-only time blocks dropped, event
+                                blocks always kept intact)
+  4. hyperparam_recommendations.json -- data-driven search spaces + weights
+                                for all 4 tasks, ready for RandomizedSearchCV
+                                / Optuna using the temporal CV folds above
+  5. Log1p target transform -- imd_rainfall_mm_log1p alongside raw mm, for
+                                a less skewed Task 1 regression target
+
+-----------------------------------------------------------------
+  HOW TO USE IN TRAINING
+-----------------------------------------------------------------
+
+  import pandas as pd
+  import numpy as np
+  X_train = pd.read_csv("ml_ready/X_train.csv")
+  X_val   = pd.read_csv("ml_ready/X_val.csv")
+  X_test  = pd.read_csv("ml_ready/X_test.csv")
+  y_train = pd.read_csv("ml_ready/y_train.csv")
+  y_val   = pd.read_csv("ml_ready/y_val.csv")
+  y_test  = pd.read_csv("ml_ready/y_test.csv")
+  sw      = pd.read_csv("ml_ready/sample_weights_train.csv")
+
+  Task 1 -- Regression (two target options)
+    # Option A: raw mm
+    y = y_train["imd_rainfall_mm"]
+    # Option B: log1p mm (usually better-conditioned for this skew)
+    y = y_train["imd_rainfall_mm_log1p"]
+    ... model.fit(X_train, y) ...
+    preds_mm = np.expm1(model.predict(X_val))   # ONLY if trained on log1p
+    XGBRegressor()  |  metrics: MAE, RMSE, R2 (always computed in mm)
+    tune with temporal_cv_folds.csv (see train_xgboost_tuned.py)
+
+  Task 2 -- Intensity Classification (0-5)
+    y = y_train["rain_intensity_class"]
+    XGBClassifier(objective="multi:softprob", num_class=6)
+    .fit(X_train, y, sample_weight=sw["sw_rain_intensity_class"])
+    metric: F1-macro
+
+  Task 3 -- Cloudburst Detection (rare event)
+    X = pd.read_csv("ml_ready/X_train_cloudburst_flag_balanced.csv")
+    y = pd.read_csv("ml_ready/y_train_cloudburst_flag_balanced.csv")["cloudburst_flag"]
+    XGBClassifier(scale_pos_weight=<see class_weights.json, recomputed on
+                  the BALANCED set -- printed in Step 18 log>)
+    metric: F1, AUC-PR
+
+  Task 4 -- Landslide Risk (rare event)
+    same pattern as Task 3, with *_landslide_risk_balanced.csv
+
+  DO NOT use accuracy for Tasks 3 & 4 -- imbalanced datasets.
+  Use: F1, Precision-Recall AUC, ROC-AUC
+
+  See train_xgboost_tuned.py for a full RandomizedSearchCV example wired
+  up to temporal_cv_folds.csv + sample_weights_train.csv.
+
+=================================================================
+  END
+=================================================================
