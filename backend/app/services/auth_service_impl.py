@@ -56,7 +56,7 @@ class AuthServiceImpl(IAuthService):
             access_token=access_token,
             refresh_token=refresh_token,
             token_type="bearer",
-            expires_in=self.settings.security.access_token_expire_minutes * 60,
+            expires_in=self.settings.jwt.access_token_expire_minutes * 60,
         )
 
     async def refresh_token(self, request: RefreshRequest, client_ip: str) -> Token:

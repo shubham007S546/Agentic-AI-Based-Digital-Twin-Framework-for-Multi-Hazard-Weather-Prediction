@@ -41,7 +41,7 @@ def create_access_token(
     if expires_delta:
         expire = now + expires_delta
     else:
-        expire = now + timedelta(minutes=settings.security.access_token_expire_minutes)
+        expire = now + timedelta(minutes=settings.jwt.access_token_expire_minutes)
         
     jti = str(uuid.uuid4())
     
@@ -55,8 +55,8 @@ def create_access_token(
     
     encoded_jwt = jwt.encode(
         to_encode, 
-        settings.security.secret_key.get_secret_value(), 
-        algorithm=settings.security.algorithm
+        settings.jwt.secret_key.get_secret_value(), 
+        algorithm=settings.jwt.algorithm
     )
     
     return encoded_jwt
@@ -74,8 +74,8 @@ def decode_access_token(token: str) -> dict[str, Any]:
     try:
         payload = jwt.decode(
             token,
-            settings.security.secret_key.get_secret_value(),
-            algorithms=[settings.security.algorithm],
+            settings.jwt.secret_key.get_secret_value(),
+            algorithms=[settings.jwt.algorithm],
         )
         return payload
     except jwt.ExpiredSignatureError as exc:

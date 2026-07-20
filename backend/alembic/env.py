@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.core.config import get_settings
 from app.database.base import Base
+import app.models  # noqa: F401 - registers all models with Base.metadata
 
 # -----------------------------------------------------------------------------
 # IMPORTANT: Import all SQLAlchemy models here so Alembic autogenerate

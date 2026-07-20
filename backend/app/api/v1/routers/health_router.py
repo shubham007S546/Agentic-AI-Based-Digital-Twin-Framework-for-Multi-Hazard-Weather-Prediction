@@ -93,7 +93,7 @@ async def readiness_probe() -> ORJSONResponse:
 
     # ── PostgreSQL check ───────────────────────────────────────────────────────
     try:
-        from app.database.session import check_db_health
+        from app.database.connection import check_db_health
         db_start = time.perf_counter()
         db_ok = await check_db_health()
         db_latency = (time.perf_counter() - db_start) * 1000

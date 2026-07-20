@@ -39,7 +39,7 @@ from app.security.authentication.jwt import decode_access_token
 
 # The token URL points to the Swagger-compatible login endpoint (if we implement one)
 # We mainly use this to tell FastAPI where to look for the "Authorization: Bearer <token>" header
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/swagger-login", auto_error=False)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
 
 async def get_current_token_data(
