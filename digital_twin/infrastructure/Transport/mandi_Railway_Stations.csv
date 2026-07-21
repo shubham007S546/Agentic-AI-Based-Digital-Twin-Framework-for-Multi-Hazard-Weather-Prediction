@@ -1,3 +1,0 @@
-osm_id,osm_type,name,tags,geometry_wkt
-4781894867,node,Joginder Nagar,"{""internet_access"": ""no"", ""name"": ""Joginder Nagar"", ""name:hi"": ""जोगिंदर नगर"", ""network"": ""IR"", ""operator"": ""NR"", ""public_transport"": ""station"", ""railway"": ""station"", ""ref"": ""JDNX"", ""train"": ""yes"", ""wikidata"": ""Q24944862"", ""wikipedia"": ""en:Joginder Nagar railway station""}",POINT (76.7894848 31.9891581)
-3067941613,node,Ahju,"{""internet_access"": ""no"", ""name"": ""Ahju"", ""name:hi"": ""आहजु"", ""network"": ""IR"", ""operator"": ""NR"", ""public_transport"": ""station"", ""railway"": ""station"", ""ref"": ""AHJU"", ""train"": ""yes"", ""wikidata"": ""Q63361149""}",POINT (76.7068993 32.0240624)

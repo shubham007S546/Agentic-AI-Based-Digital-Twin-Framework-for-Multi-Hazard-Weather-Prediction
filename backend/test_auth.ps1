@@ -1,0 +1,2 @@
+$token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJiMWI4YzA3Ni1lMGZkLTQ5YmItODhiOS0xY2Y3YmQ5MzNkMmEiLCJyb2xlIjoiU1VQRVJfQURNSU4iLCJleHAiOjE3ODQ1MzgyNDYsImlhdCI6MTc4NDUzNjQ0NiwianRpIjoiNjMyNzBlZTQtOWQ1NS00Nzk1LTk5MDgtN2I2NjBjZmVkMjM0In0.sI5WUDT-dZlfU1imyEe8YYUAs8H0JiGBJhnVUwkCHkI"
+Invoke-RestMethod -Uri "http://localhost:8000/api/v1/users/me" -Headers @{Authorization="Bearer $token"}

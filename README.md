@@ -30,6 +30,15 @@ Data engineering, preprocessing, and feature engineering are complete. The proje
 
 ---
 
+# Knowledge Engine
+
+A new `knowledge_engine/` module has been added to support enterprise-grade
+ingestion, metadata management, and knowledge persistence while preserving the
+existing `RAG_project` retrieval and embedding pipeline. The UI assistant now
+connects through the backend to this knowledge-enabled stack.
+
+---
+
 # Project Workflow
 
 ```
@@ -228,9 +237,10 @@ model comparison, rather than continuing to search over architectures.
 
 A Next.js frontend has been added under `frontend/`, providing the
 visualization/interaction layer on top of the modeling pipeline (dashboards,
-prediction views, etc. — details to be filled in as pages are finalized).
+prediction views, etc.). The `AI Assistant` page is now wired into the
+backend and uses the existing RAG retrieval pipeline for knowledge-backed answers.
 
-```
+```bash
 frontend/
 ├── app/            # Next.js app router pages
 ├── components/     # UI components
@@ -247,6 +257,12 @@ cd frontend
 pnpm install
 pnpm dev
 ```
+
+### Important Note
+
+Do not delete the `RAG_project/` folder while the AI Assistant integration is active.
+The backend endpoint `/api/v1/agents/assistant/query` still relies on the existing
+RAG retrieval and FAISS vector store from `RAG_project`.
 
 ---
 

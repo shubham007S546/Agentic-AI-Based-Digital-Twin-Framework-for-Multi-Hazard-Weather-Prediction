@@ -1,0 +1,20 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+langgraph>=0.1
+pandas>=2.0
+python-dotenv>=1.0
+
+# required to actually load your trained models -- these should already be
+# installed alongside your machine_learning_module (lightgbm/xgboost/
+# scikit-learn), listed here for completeness
+lightgbm>=4.0
+xgboost>=2.0
+scikit-learn>=1.3
+joblib>=1.3
+
+# optional -- only needed for deep_learning / transformer artifacts
+# torch>=2.0
+
+# optional -- only needed if you set REDIS_URL
+redis>=5.0

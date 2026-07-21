@@ -1,9 +1,0 @@
-osm_id,osm_type,name,tags,geometry_wkt
-540052521,node,Holi Police Station,"{""amenity"": ""police"", ""name"": ""Holi Police Station""}",POINT (76.5577044 32.3263179)
-2903021863,node,Police Station Bharmaur,"{""amenity"": ""police"", ""name"": ""Police Station Bharmaur""}",POINT (76.5289393 32.4466109)
-2902903861,node,Police Station  Bakloh,"{""addr:city"": ""Bakloh"", ""addr:postcode"": ""176301"", ""amenity"": ""police"", ""name"": ""Police Station  Bakloh""}",POINT (75.9246201 32.4666342)
-594714181,way,Police station,"{""amenity"": ""police"", ""building"": ""yes"", ""name"": ""Police station""}","POLYGON ((75.9643213 32.5326684, 75.9646282 32.532847, 75.964875 32.5330554, 75.9649727 32.5331604, 75.9650296 32.5331288, 75.9650876 32.5329309, 75.9650915 32.5328787, 75.9644788 32.5324909, 75.9644262 32.5325417, 75.9643213 32.5326684))"
-2902909167,node,Police Station Dalhousie,"{""amenity"": ""police"", ""name"": ""Police Station Dalhousie""}",POINT (75.976231 32.5366047)
-716376701,node,Police Station Sultanpur,"{""amenity"": ""police"", ""name"": ""Police Station Sultanpur""}",POINT (76.1175354 32.5603108)
-299338989,node,Road closed,"{""amenity"": ""police"", ""name"": ""Road closed""}",POINT (75.8617488 32.8698242)
-774382360,node,Bhanodi Police Post,"{""amenity"": ""police"", ""name"": ""Bhanodi Police Post""}",POINT (76.180578 32.9622581)

@@ -101,3 +101,9 @@ def get_logger(name: str, source_log_dir: Path | None = None) -> logging.Logger:
 
     logger.propagate = False
     return logger
+
+
+# Convenience export for modules that rely on a shared logger instance.
+# This preserves compatibility with older code that imported `logger`
+# directly from utils.logger.
+logger = get_logger("root")
