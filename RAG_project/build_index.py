@@ -27,7 +27,7 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parent))
 
-from config import DATA_DIR, WEB_URLS, WEB_URLS_FILE
+from config import PDF_DIR, WEB_URLS, WEB_URLS_FILE
 from loaders.pdf_loader import PDFLoader
 from loaders.web_loader import WebLoader
 from chunking.text_splitter import TextSplitter
@@ -40,8 +40,8 @@ from utils.logger import logger
 def build_index():
     logger.info("Starting offline index build...")
 
-    # Load PDFs
-    pdf_loader = PDFLoader(DATA_DIR)
+    # Load PDFs from the configured PDF folder
+    pdf_loader = PDFLoader(PDF_DIR)
     pdf_documents = pdf_loader.load_all_pdfs()
     print(f"Pages Loaded (PDF) : {len(pdf_documents)}")
 

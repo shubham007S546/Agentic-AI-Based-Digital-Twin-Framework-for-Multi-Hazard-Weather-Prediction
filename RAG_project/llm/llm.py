@@ -1,9 +1,23 @@
 import os
 import sys
 from pathlib import Path
-sys.path.append(str(Path(__file__).resolve().parent.parent))
+
 from dotenv import load_dotenv
 from openai import OpenAI
+
+# Ensure the RAG package can import from its own package root when the backend
+# starts from a different working directory.
+PACKAGE_ROOT = Path(__file__).resolve().parent.parent
+sys.path.append(str(PACKAGE_ROOT))
+
+# Load environment variables from the RAG_project .env file if available.
+# This is required when the backend runs from the `backend/` folder and the
+# current working directory is not the RAG_project root.
+env_path = PACKAGE_ROOT / '.env'
+if env_path.exists():
+    load_dotenv(env_path)
+else:
+    load_dotenv()
 
 from config import (
     LLM_MODEL,
@@ -13,8 +27,6 @@ from config import (
 )
 
 from utils.logger import logger
-
-load_dotenv()
 
 
 class GroqLLM:

@@ -18,13 +18,23 @@ class ProjectRepositoryCollector(CollectorBase):
         ".txt",
         ".rst",
     }
+    DEFAULT_IGNORE = {
+        ".git",
+        ".venv",
+        "node_modules",
+        "__pycache__",
+        "tests",
+        "cache",
+        "temp",
+        "logs",
+    }
     DEFAULT_FILENAMES = {"README.md", "README", "README.rst", "Dockerfile", "requirements.txt"}
 
     def __init__(self, config: Dict[str, object]):
         super().__init__(config)
         self.settings = self.config.get("collectors", {}).get("project_repo", {})
         self.root_dir = Path(self.settings.get("root_dir", ".")).resolve()
-        self.ignored = set(self.settings.get("ignore", []))
+        self.ignored = set(self.settings.get("ignore", [])) | self.DEFAULT_IGNORE
         self.extensions = set(self.settings.get("supported_extensions", [])) or self.DEFAULT_EXTENSIONS
 
     def discover(self) -> List[CollectedSource]:

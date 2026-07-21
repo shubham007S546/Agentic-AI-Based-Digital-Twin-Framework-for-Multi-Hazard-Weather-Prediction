@@ -3,10 +3,18 @@
 import { useRef, useState } from 'react'
 import { Bot, Send, Sparkles, User } from 'lucide-react'
 import { GlassCard } from '@/components/shared/glass-card'
-import { ASSISTANT_SUGGESTIONS, ASSISTANT_CANNED } from '@/lib/mock/extended-data'
+import { ASSISTANT_CANNED } from '@/lib/mock/extended-data'
 import { askAssistant } from '@/lib/api/assistant'
 import type { ChatMessage } from '@/types'
 import { cn } from '@/lib/utils'
+
+const RAG_SUGGESTIONS = [
+  'What does the latest government flood advisory say for Mandi district?',
+  'Summarize the official landslide mitigation guidance from the project documents.',
+  'Which datasets are described in the project data dictionary?',
+  'What is the cloudburst risk assessment for Kullu in the official reports?',
+  'Explain the AI assistant workflow for hazard prediction using RAG retrieval.',
+]
 
 function pickResponse(query: string): string {
   const q = query.toLowerCase()
@@ -27,7 +35,7 @@ export function AssistantChat() {
       id: 'm-0',
       role: 'assistant',
       content:
-        "I'm the Shubham intelligence agent. I can reason over live weather, hazard predictions, river gauges, terrain layers and model diagnostics. Ask me anything about the current situation.",
+        "I'm the Shubham intelligence agent. I use RAG retrieval over official documents, government PDFs, and project knowledge to answer questions accurately. Ask me anything about the current situation or the underlying reports.",
     },
   ])
   const [input, setInput] = useState('')
@@ -129,7 +137,7 @@ export function AssistantChat() {
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask about hazards, models, districts, assets..."
+            placeholder="Ask a RAG-backed question about government reports, hazard predictions, datasets, or project knowledge..."
             className="flex-1 bg-secondary/60 border border-border rounded-lg px-3 h-10 text-sm outline-none placeholder:text-muted-foreground focus:border-primary/40"
             aria-label="Message the assistant"
           />
@@ -148,10 +156,13 @@ export function AssistantChat() {
         <GlassCard className="p-4">
           <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
             <Sparkles className="size-3.5 text-primary" aria-hidden="true" />
-            Suggested Queries
+            Suggested RAG Queries
           </h2>
+          <p className="text-xs text-muted-foreground mb-3">
+            Ask questions backed by project reports, government advisories, dataset documentation, or research knowledge.
+          </p>
           <ul className="flex flex-col gap-2">
-            {ASSISTANT_SUGGESTIONS.map((s) => (
+            {RAG_SUGGESTIONS.map((s) => (
               <li key={s}>
                 <button
                   type="button"

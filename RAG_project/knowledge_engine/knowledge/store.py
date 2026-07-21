@@ -1,6 +1,26 @@
+import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, List
+
+
+def safe_document_id(source_path: str, max_length: int = 64) -> str:
+    """Generate a safe, deterministic document identifier for filesystem storage.
+
+    Replaces invalid Windows filename characters, normalizes path separators,
+    truncates long names, and appends a short SHA256 hash.
+    """
+    normalized = str(source_path).replace("\\", "/")
+    sanitized = re.sub(r'[<>:"/\\|?*]+', "_", normalized)
+    sanitized = re.sub(r"_+", "_", sanitized).strip("_")
+    if not sanitized:
+        sanitized = "doc"
+    hash_suffix = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:12]
+    max_base_len = max_length - len(hash_suffix) - 1
+    if len(sanitized) > max_base_len:
+        sanitized = sanitized[:max_base_len].rstrip("_")
+    return f"{sanitized}_{hash_suffix}"
 
 
 class KnowledgeStore:
@@ -11,8 +31,9 @@ class KnowledgeStore:
     def persist_document(self, metadata: Dict[str, Any], raw_text: str, chunks: List[Any]) -> Path:
         collection = metadata.get("collection") or "processed"
         doc_id = metadata.get("doc_id") or metadata.get("source", "unknown")
+        safe_id = safe_document_id(doc_id)
         collection_dir = self.root / collection
-        document_dir = collection_dir / doc_id
+        document_dir = collection_dir / safe_id
         document_dir.mkdir(parents=True, exist_ok=True)
 
         (document_dir / "document.txt").write_text(raw_text, encoding="utf-8")

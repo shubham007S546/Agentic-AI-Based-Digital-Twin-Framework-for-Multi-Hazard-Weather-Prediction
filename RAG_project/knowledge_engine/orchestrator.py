@@ -11,7 +11,7 @@ from .collectors.local_documents_collector import LocalDocumentsCollector
 from .collectors.news_collector import NewsCollector
 from .collectors.project_repo_collector import ProjectRepositoryCollector
 from .collectors.research_papers_collector import ResearchPapersCollector
-from .knowledge.store import KnowledgeStore
+from .knowledge.store import KnowledgeStore, safe_document_id
 from .metadata.storage import MetadataStore
 from .statistics.stats import StatisticsWriter
 from .processors.deduper import compute_content_hash
@@ -102,7 +102,7 @@ class KnowledgeEngine:
                     doc_text = "\n\n".join(raw_texts)
                     content_hash = compute_content_hash(doc_text)
                     source.metadata["content_hash"] = content_hash
-                    source.metadata["doc_id"] = f"{source.source_type}:{source.source_id}:{content_hash[:12]}"
+                    source.metadata["doc_id"] = safe_document_id(f"{source.source_type}:{source.source_id}:{content_hash[:12]}")
                     if self.metadata_store.get_by_content_hash(content_hash) and not force:
                         logger.info(f"Skipping unchanged document: {source.source_id}")
                         continue

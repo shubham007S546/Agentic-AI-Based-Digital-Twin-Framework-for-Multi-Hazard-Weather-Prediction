@@ -2,6 +2,7 @@
 Global Configuration File
 """
 
+import os
 from pathlib import Path
 
 # ==========================================================
@@ -10,7 +11,12 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 
+# Root data folder for RAG. Keep this as the project-level data root.
 DATA_DIR = BASE_DIR / "data"
+
+# PDF ingestion folder. Put your own PDFs here.
+# Use RAG_PDF_DIR to override from the environment if needed.
+PDF_DIR = Path(os.environ.get("RAG_PDF_DIR", DATA_DIR / "pdfs"))
 
 # ==========================================================
 # Website Sources (optional — mixed in alongside PDFs)
@@ -25,7 +31,9 @@ WEB_URLS_FILE = DATA_DIR / "urls.txt"
 
 VECTOR_DB_DIR = BASE_DIR / "database" / "faiss_index"
 
-IMAGE_DIR = DATA_DIR / "extracted_images"
+# Extracted image cache for PDF figures. Keep this out of the PDF source
+# folder so the data directory only contains your input documents.
+IMAGE_DIR = BASE_DIR.parent / "knowledge_engine" / "cache" / "extracted_images"
 
 LOG_DIR = BASE_DIR / "logs"
 

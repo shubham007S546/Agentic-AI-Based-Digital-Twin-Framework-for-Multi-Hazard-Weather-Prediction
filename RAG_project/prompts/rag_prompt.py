@@ -31,23 +31,37 @@ class RAGPrompt:
 
             metadata = doc.metadata
 
-            score = metadata.get("score")
+            source = metadata.get("source", "Unknown source")
+            # No fake "N/A" — a page number only exists for paginated
+            # sources (PDFs). Code/markdown/config files use a line
+            # number instead, if the collector recorded one. If
+            # neither is present, we simply omit that line rather than
+            # printing a placeholder.
+            page = metadata.get("page")
+            line = metadata.get("line")
 
+            score = metadata.get("score")
             score_line = f"Similarity Score : {score:.4f}\n" if score is not None else ""
+
+            location_line = ""
+            location_suffix = ""
+            if page is not None:
+                location_line = f"Page   : {page}\n"
+                location_suffix = f" (Page {page})"
+            elif line is not None:
+                location_line = f"Line   : {line}\n"
+                location_suffix = f" (Line {line})"
 
             context.append(
                 f"""
-Source : {metadata['source']}
-Page   : {metadata['page']}
-{score_line}
+Source : {source}
+{location_line}{score_line}
 Content:
 {doc.page_content}
 """
             )
 
-            sources.append(
-                f"{metadata['source']} (Page {metadata['page']})"
-            )
+            sources.append(f"{source}{location_suffix}")
 
         context = "\n\n" + ("\n" + "=" * 80 + "\n").join(context)
 

@@ -46,7 +46,9 @@ collectors:
 
   local_documents:
     enabled: true
-    directories: []
+    directories:
+      - ./data/pdf
+      - ./data/docs
     supported_extensions:
       - .pdf
       - .docx
@@ -62,18 +64,21 @@ collectors:
       - .ipynb
 
   government:
-    enabled: false
-    local_directories: []
+    enabled: true
+    local_directories:
+      - ./data/government
     urls: []
 
   research:
-    enabled: false
-    local_directories: []
+    enabled: true
+    local_directories:
+      - ./data/research
     urls: []
 
   datasets:
-    enabled: false
-    directories: []
+    enabled: true
+    directories:
+      - ./data/datasets
 
   news:
     enabled: false

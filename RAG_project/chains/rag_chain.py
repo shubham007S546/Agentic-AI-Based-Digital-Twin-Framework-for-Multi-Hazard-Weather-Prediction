@@ -8,6 +8,7 @@ pipeline logging.
 
 import sys
 import re
+import time
 from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
@@ -134,6 +135,8 @@ class RAGChain:
 
     def ask(self, question: str):
 
+        t_start = time.perf_counter()
+
         # Step 0: Record the user's question in memory
         self.memory.add_user_message(question)
 
@@ -142,6 +145,10 @@ class RAGChain:
         chitchat_reply = self._chitchat_reply(question)
         if chitchat_reply is not None:
             self.memory.add_assistant_message(chitchat_reply)
+            logger.info(
+                "ask() timing (chitchat)",
+                total=f"{time.perf_counter() - t_start:.2f}s"
+            )
             return {
                 "question": question,
                 "rewritten_question": question,
@@ -155,25 +162,34 @@ class RAGChain:
 
         # Step 2: Rewrite the question into a standalone question
         # using conversation history (resolves "it", "why", "that", etc.)
+        t0 = time.perf_counter()
         rewritten_question = self.query_rewriter.rewrite(
             question,
             conversation
         )
+        t_rewrite = time.perf_counter() - t0
 
         # Step 3: Retrieve using the REWRITTEN question, not the raw one.
+        # This is usually the most expensive step (query embedding +
+        # FAISS/BM25 search + cross-encoder reranking all happen inside
+        # self.retriever.retrieve()).
+        t0 = time.perf_counter()
         retrieved_results = self.retriever.retrieve(
             rewritten_question,
             top_k=TOP_K
         )
+        t_retrieve = time.perf_counter() - t0
 
         # Step 4: Build Prompt — the ORIGINAL question is shown to the
         # user/LLM here, not the rewritten one, so the answer still
         # addresses what the user actually typed
+        t0 = time.perf_counter()
         prompt, sources = RAGPrompt.build(
             question,
             retrieved_results,
             conversation
         )
+        t_prompt = time.perf_counter() - t0
 
         # All debug output is gated behind a single flag. When
         # DEBUG=False, none of this runs and there is zero extra output.
@@ -181,10 +197,27 @@ class RAGChain:
             self._print_debug(question, rewritten_question, conversation, prompt)
 
         # Step 5: Generate Answer
+        t0 = time.perf_counter()
         answer = self.llm.generate(prompt)
+        t_generate = time.perf_counter() - t0
 
         # Step 6: Record the assistant's answer in memory
         self.memory.add_assistant_message(answer)
+
+        t_total = time.perf_counter() - t_start
+
+        # Per-stage timing so slow queries can be diagnosed from logs
+        # instead of guessed at. rewrite = query_rewriter LLM call,
+        # retrieve = embedding + FAISS/BM25 + cross-encoder rerank,
+        # prompt = pure string building (should be ~0), generate = LLM call.
+        logger.info(
+            "ask() timing",
+            rewrite=f"{t_rewrite:.2f}s",
+            retrieve=f"{t_retrieve:.2f}s",
+            prompt_build=f"{t_prompt:.2f}s",
+            generate=f"{t_generate:.2f}s",
+            total=f"{t_total:.2f}s",
+        )
 
         return {
             "question": question,

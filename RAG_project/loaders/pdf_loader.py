@@ -34,7 +34,7 @@ try:
 except ImportError:
     OCR_AVAILABLE = False
 
-from config import DATA_DIR, BASE_DIR
+from config import PDF_DIR, BASE_DIR
 from utils.logger import logger
 from RAG_project.utils.text_cleaner import clean_text
 
@@ -54,7 +54,7 @@ MAX_IMAGES_LOGGED_PER_PAGE = 5
 # safe for special characters and math symbols.
 NORMALIZE_FORM = "NFC"
 
-EXTRACTED_IMAGES_DIR = BASE_DIR / "data" / "extracted_images"
+EXTRACTED_IMAGES_DIR = BASE_DIR.parent / "knowledge_engine" / "cache" / "extracted_images"
 
 # Unicode ranges that signal "this text contains math", used for a cheap
 # heuristic flag — no heavy NLP/model needed for the common case.
