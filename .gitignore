@@ -54,6 +54,14 @@ logs/
 *.joblib
 *.parquet
 
+# -------------------------
+# Data files (large, regenerable)
+# -------------------------
+*.csv
+digital_twin/
+ml_ready/
+machine_learning_module/artifacts/
+
 # OS files
 Thumbs.db
 .DS_Store
