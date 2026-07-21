@@ -1,11 +1,16 @@
-"""Knowledge Engine package.
+import os
 
-This package wraps the ingestion and knowledge management layer around the
-existing RAG pipeline without replacing the embedding, retriever, or vector
-store implementations.
-"""
+# Shim to make `import knowledge_engine` continue to work after moving the
+# package contents under RAG_project/knowledge_engine. This sets the
+# package search path to the moved location so existing imports remain valid.
 
-from .config.config import config
-from .orchestrator import KnowledgeEngine
+_this_dir = os.path.dirname(__file__)
+_repo_root = os.path.dirname(_this_dir)  # one level above this shim
+_moved_path = os.path.join(_repo_root, "RAG_project", "knowledge_engine")
 
-__all__ = ["config", "KnowledgeEngine"]
+# If the moved path exists, use it as the package path. Otherwise fall back to
+# the original location (best-effort compatibility during incremental changes).
+if os.path.isdir(_moved_path):
+    __path__ = [os.path.abspath(_moved_path)]
+else:
+    __path__ = [os.path.abspath(_this_dir)]

@@ -14,7 +14,9 @@ Endpoints:
 from __future__ import annotations
 
 from typing import Annotated, Any
+
 from fastapi import APIRouter, Depends, Path, status
+from pydantic import BaseModel, Field
 
 from app.core.enums import AgentName, AgentTrigger
 from app.dependencies.auth import CurrentUserToken, require_admin
@@ -147,6 +149,28 @@ async def queue_agent_async(
         data={"task_id": task.id, "agent": agent_name, "status": "queued"},
         message=f"Agent '{agent_name}' queued for execution. Track with task_id: {task.id}",
     )
+
+
+class AssistantQueryRequest(BaseModel):
+    question: str = Field(..., min_length=1, description="Natural language question for the AI assistant")
+
+
+@router.post(
+    "/assistant/query",
+    summary="Ask the AI assistant a question",
+)
+async def query_assistant(
+    payload: AssistantQueryRequest,
+) -> ApiResponse[dict]:
+    """Run the existing RAG retrieval + Groq generation pipeline and return an answer."""
+    from RAG_project.app import load_runtime_dependencies
+    from RAG_project.chains.rag_chain import RAGChain
+
+    retriever = load_runtime_dependencies()
+    rag_chain = RAGChain(retriever)
+    result = rag_chain.ask(payload.question)
+
+    return ApiResponse(data=result, message="Assistant response generated")
 
 
 # ── Full pipeline trigger ─────────────────────────────────────────────────────

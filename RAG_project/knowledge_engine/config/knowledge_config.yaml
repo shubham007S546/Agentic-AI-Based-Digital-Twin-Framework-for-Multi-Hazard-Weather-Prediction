@@ -1,0 +1,96 @@
+# Knowledge Engine Configuration
+# This file controls ingestion, collector settings, knowledge storage,
+# vectorstore selection, scheduler defaults, and manifest/log paths.
+
+knowledge_root: knowledge_engine/knowledge
+log_dir: knowledge_engine/logs
+cache_dir: knowledge_engine/cache
+metadata_db: knowledge_engine/metadata/knowledge_metadata.db
+manifest_path: knowledge_engine/statistics/knowledge_manifest.json
+vectorstore_type: faiss
+vectorstore_namespace: default
+
+collections:
+  project: project
+  government: government
+  research: research
+  datasets: datasets
+  reports: reports
+  manuals: manuals
+  news: news
+  processed: processed
+
+collectors:
+  project_repo:
+    enabled: true
+    root_dir: .
+    ignore:
+      - .git
+      - node_modules
+      - .venv
+      - models
+      - raw datasets
+      - logs
+    supported_extensions:
+      - .md
+      - .markdown
+      - .py
+      - .json
+      - .yaml
+      - .yml
+      - .ipynb
+      - .txt
+      - Dockerfile
+      - requirements.txt
+      - .rst
+
+  local_documents:
+    enabled: true
+    directories: []
+    supported_extensions:
+      - .pdf
+      - .docx
+      - .pptx
+      - .odt
+      - .rtf
+      - .txt
+      - .md
+      - .py
+      - .json
+      - .yaml
+      - .yml
+      - .ipynb
+
+  government:
+    enabled: false
+    local_directories: []
+    urls: []
+
+  research:
+    enabled: false
+    local_directories: []
+    urls: []
+
+  datasets:
+    enabled: false
+    directories: []
+
+  news:
+    enabled: false
+    rss_feeds: []
+    urls: []
+
+  documentation:
+    enabled: false
+    sites: []
+
+scheduler:
+  default_mode: manual
+  daily: true
+  weekly: true
+  incremental_window_days: 1
+
+logging:
+  level: INFO
+  manifest_file: knowledge_engine/statistics/knowledge_manifest.json
+  run_log_file: knowledge_engine/logs/ingest_runs.log

@@ -36,7 +36,7 @@ except ImportError:
 
 from config import DATA_DIR, BASE_DIR
 from utils.logger import logger
-from utils.text_cleaner import clean_text
+from RAG_project.utils.text_cleaner import clean_text
 
 
 # -------------------------------

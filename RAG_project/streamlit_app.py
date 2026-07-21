@@ -10,10 +10,16 @@ Run with:
     streamlit run streamlit_app.py
 """
 
+import sys
+from pathlib import Path
+
+# Ensure the package root is on PYTHONPATH when the app is launched
+# from the RAG_project folder directly.
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
 import json
 import time
 import shutil
-from pathlib import Path
 from datetime import datetime
 
 import streamlit as st

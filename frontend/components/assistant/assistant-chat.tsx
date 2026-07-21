@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { Bot, Send, Sparkles, User } from 'lucide-react'
 import { GlassCard } from '@/components/shared/glass-card'
 import { ASSISTANT_SUGGESTIONS, ASSISTANT_CANNED } from '@/lib/mock/extended-data'
+import { askAssistant } from '@/lib/api/assistant'
 import type { ChatMessage } from '@/types'
 import { cn } from '@/lib/utils'
 
@@ -13,6 +14,11 @@ function pickResponse(query: string): string {
   if (q.includes('model') || q.includes('lstm') || q.includes('xgboost') || q.includes('compare'))
     return ASSISTANT_CANNED.model
   return ASSISTANT_CANNED.default
+}
+
+function formatAssistantMessage(answer: string, sources: string[] | undefined): string {
+  if (!sources || sources.length === 0) return answer
+  return `${answer}\n\nSources:\n${sources.map((source) => `- ${source}`).join('\n')}`
 }
 
 export function AssistantChat() {
@@ -28,26 +34,38 @@ export function AssistantChat() {
   const [thinking, setThinking] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
 
-  function send(text: string) {
-    const trimmed = text.trim()
-    if (!trimmed || thinking) return
-    const userMsg: ChatMessage = { id: `m-${Date.now()}`, role: 'user', content: trimmed }
-    setMessages((prev) => [...prev, userMsg])
-    setInput('')
-    setThinking(true)
-    setTimeout(() => {
-      setMessages((prev) => [
-        ...prev,
-        { id: `m-${Date.now()}-a`, role: 'assistant', content: pickResponse(trimmed) },
-      ])
-      setThinking(false)
-      requestAnimationFrame(() => {
-        listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' })
-      })
-    }, 900)
-    requestAnimationFrame(() => {
-      listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' })
-    })
+  async function send(text: string) {
+   const trimmed = text.trim()
+   if (!trimmed || thinking) return
+
+   const userMsg: ChatMessage = { id: `m-${Date.now()}`, role: 'user', content: trimmed }
+   setMessages((prev) => [...prev, userMsg])
+   setInput('')
+   setThinking(true)
+
+   try {
+     const response = await askAssistant(trimmed)
+     const assistantMsg: ChatMessage = {
+       id: `m-${Date.now()}-a`,
+       role: 'assistant',
+       content: formatAssistantMessage(response.answer, response.sources),
+     }
+     setMessages((prev) => [...prev, assistantMsg])
+   } catch (error) {
+     setMessages((prev) => [
+       ...prev,
+       {
+         id: `m-${Date.now()}-a`,
+         role: 'assistant',
+         content: `${pickResponse(trimmed)}\n\n(Unable to reach the assistant backend; showing offline fallback.)`,
+       },
+     ])
+   } finally {
+     setThinking(false)
+     requestAnimationFrame(() => {
+       listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' })
+     })
+   }
   }
 
   return (
@@ -75,7 +93,7 @@ export function AssistantChat() {
               </span>
               <div
                 className={cn(
-                  'rounded-xl px-4 py-3 text-sm leading-relaxed max-w-[85%] text-pretty',
+                  'rounded-xl px-4 py-3 text-sm leading-relaxed max-w-[85%] text-pretty whitespace-pre-wrap',
                   m.role === 'assistant'
                     ? 'bg-secondary/60 border border-border'
                     : 'bg-primary/15 border border-primary/25',

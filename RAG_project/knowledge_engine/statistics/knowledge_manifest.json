@@ -1,0 +1,31 @@
+{
+  "run_id": "20260721T072049Z",
+  "run_type": "manual",
+  "timestamp": "2026-07-21T07:21:38.859918Z",
+  "stats": {
+    "run_id": "20260721T072049Z",
+    "run_type": "manual",
+    "started_at": "2026-07-21T07:20:49.971499Z",
+    "finished_at": "2026-07-21T07:21:38.859918Z",
+    "elapsed_seconds": 48.888419,
+    "targets": [
+      "project"
+    ],
+    "force": false,
+    "dry_run": true,
+    "documents_processed": 148,
+    "chunks_created": 303,
+    "embeddings_created": 0,
+    "duplicates_removed": 0,
+    "errors": 148,
+    "per_collection": {
+      "project": {
+        "documents": 148,
+        "chunks": 303,
+        "embeddings": 0,
+        "duplicates": 0,
+        "errors": 200
+      }
+    }
+  }
+}
