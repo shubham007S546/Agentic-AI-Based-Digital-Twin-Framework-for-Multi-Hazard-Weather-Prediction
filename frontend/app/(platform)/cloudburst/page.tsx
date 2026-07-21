@@ -5,7 +5,7 @@ import { StatCard } from '@/components/shared/stat-card'
 import { GlassCard } from '@/components/shared/glass-card'
 import { RiskBadge } from '@/components/shared/risk-badge'
 import { ProbabilityGauge, GenericAreaChart } from '@/components/charts/extra-charts'
-import { getActiveAlerts } from '@/lib/api/alerts'
+import { HAZARD_STATIONS, ALERTS } from '@/lib/mock/data'
 
 export const metadata: Metadata = {
   title: 'Cloudburst Prediction | VARUNA',
@@ -27,9 +27,8 @@ const BASINS = [
   { name: 'Ravi Headwaters', probability: 22, risk: 'low' as const, window: '—' },
 ]
 
-export default async function CloudburstPage() {
-  const alerts = await getActiveAlerts()
-  const cloudburstAlert = alerts.find((a) => a.type === 'Cloudburst')
+export default function CloudburstPage() {
+  const cloudburstAlert = ALERTS.find((a) => a.type === 'Cloudburst')
 
   return (
     <div className="p-4 lg:p-6 flex flex-col gap-6">

@@ -5,15 +5,14 @@ import { StatCard } from '@/components/shared/stat-card'
 import { GlassCard } from '@/components/shared/glass-card'
 import { RiskBadge } from '@/components/shared/risk-badge'
 import { HourlyRainfallChart, MonthlyRainfallChart, PredictionTimelineChart } from '@/components/charts/charts'
-import { getHazardStations } from '@/lib/api/stations'
+import { HAZARD_STATIONS } from '@/lib/mock/data'
 
 export const metadata: Metadata = {
   title: 'Rainfall Prediction | VARUNA',
   description: 'AI-driven rainfall nowcasting and multi-horizon prediction.',
 }
 
-export default async function RainfallPage() {
-  const stations = await getHazardStations()
+export default function RainfallPage() {
   return (
     <div className="p-4 lg:p-6 flex flex-col gap-6">
       <PageHeader

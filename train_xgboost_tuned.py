@@ -3,13 +3,6 @@ train_xgboost_tuned.py
 ==============================================================================
 Companion training script for the ml_ready/ output of final_preprocessing.py.
 
-NOTE: landslide_risk ("Task 4") has been removed entirely -- reliable
-landslide prediction needs geotechnical/slope-stability sensor data (soil
-moisture, pore pressure, slope displacement, etc.) this weather-only
-dataset doesn't have, and the source column also turned out to be data
-quality-broken (0/1/2 values instead of a clean binary flag). Only
-cloudburst_flag remains as the rare-event binary task.
-
 Demonstrates all 4 techniques wired together, end to end:
 
   1. WEIGHTED TEMPORAL CROSS-VALIDATION
@@ -26,14 +19,14 @@ Demonstrates all 4 techniques wired together, end to end:
          (sw_rain_intensity_class, from class_weights.json) passed straight
          into .fit(sample_weight=...). RandomizedSearchCV slices this
          array identically to X/y for every CV fold automatically.
-       - cloudburst_flag (binary): scale_pos_weight is
+       - cloudburst_flag / landslide_risk (binary): scale_pos_weight is
          RE-DERIVED from the balanced dataset's own pos/neg counts (not
          the raw full-train value) and passed as a fixed XGBClassifier
-         param, since this target is trained on technique #3 below.
+         param, since these targets are trained on technique #3 below.
 
   3. TIME-BLOCK UNDERSAMPLING
-       cloudburst_flag is trained on
-       X_train_cloudburst_flag_balanced.csv (Step 18 of preprocessing) instead of
+       cloudburst_flag / landslide_risk are trained on
+       X_train_<target>_balanced.csv (Step 18 of preprocessing) instead of
        the full X_train -- whole negative-only time blocks were removed,
        never individual rows, so temporal structure is preserved.
        Evaluation always happens on the REAL, untouched X_val/y_val --
@@ -44,7 +37,7 @@ Demonstrates all 4 techniques wired together, end to end:
        RandomizedSearchCV per task, search spaces loaded from
        hyperparam_recommendations.json (Step 19), scored with the metric
        appropriate to each task (RMSE for regression, F1-macro for
-       multiclass, AUC-PR for the rare-event binary task -- never
+       multiclass, AUC-PR for the two rare-event binary tasks -- never
        accuracy on an imbalanced target).
 
 Usage
@@ -58,7 +51,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import warnings
 from pathlib import Path
 
 import numpy as np
@@ -75,27 +67,8 @@ from sklearn.metrics import (
 from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
 from xgboost import XGBClassifier, XGBRegressor
 
-# Sklearn/XGBoost throw a lot of routine UserWarnings during CV search
-# (e.g. "Parameters: {...} are not used" when a fold's data shape makes a
-# param inapplicable). Silenced here the same way final_preprocessing.py
-# does, so real problems aren't buried under expected noise. If you're
-# debugging a new issue, comment this out temporarily to see everything.
-warnings.filterwarnings("ignore")
-
 RANDOM_STATE = 42
 DEFAULT_N_ITER = 25   # RandomizedSearchCV trials per task -- raise for a deeper search
-
-# PERFORMANCE FIX (found in testing -- this is very likely the "too slow"
-# cause): RandomizedSearchCV(n_jobs=-1) already parallelizes across CV
-# folds/candidates by spawning multiple worker PROCESSES. XGBoost's
-# n_jobs/nthread defaults to using EVERY CPU core inside each of those
-# workers too -- so with n_jobs=-1 on both levels you get far more threads
-# running than you have cores (e.g. 8 worker processes x 8 threads each on
-# an 8-core machine), which causes heavy contention and can make training
-# dramatically SLOWER than a single-threaded model would be, especially on
-# Windows. Fix: pin every individual XGBoost model to 1 thread and let
-# RandomizedSearchCV's n_jobs=-1 be the ONLY level of parallelism.
-XGB_N_JOBS = 1
 
 
 # ==============================================================================
@@ -123,63 +96,12 @@ def load_temporal_cv_splits(ml_ready: Path, n_splits: int = 5) -> list[tuple[np.
 
 
 def _feature_cols_from_master(master: pd.DataFrame) -> list[str]:
-    """
-    Everything in train_ready_master.csv that ISN'T a target, sample-weight,
-    or bookkeeping column.
-
-    FIX (critical leakage bug found in testing): the previous exclude set
-    only listed 4 of the 8 TARGET_COLS that final_preprocessing.py actually
-    writes into train_ready_master.csv. Missing:
-      - imd_rainfall_mm_log1p   -- log1p() of the Task 1 regression target
-                                   itself. Feeding this into X for Task 1
-                                   is near-perfect leakage (it's a
-                                   deterministic, monotonic transform of
-                                   the exact number being predicted).
-      - heavy_rain_flag / very_heavy_rain_flag / extreme_rain_flag
-                                -- coarser re-thresholds of
-                                   rain_intensity_class (Task 2's target).
-                                   Feeding these into X for Task 2 tells the
-                                   model almost exactly which class band
-                                   the row falls in before it ever sees a
-                                   real feature.
-    These 4 columns were silently riding into every task's X_train/X_val
-    (Task 1 regression AND Task 2 classification both use this function),
-    inflating validation scores without any real predictive skill. Fixed by
-    excluding the full, exact set of TARGET_COLS from
-    final_preprocessing.py, not a partial list maintained by hand twice.
-    """
-    # Keep this in exact sync with TARGET_COLS in final_preprocessing.py --
-    # every target the preprocessing script can write into the master file.
-    target_cols = {
-        "imd_rainfall_mm", "imd_rainfall_mm_log1p", "rain_intensity_class",
-        "cloudburst_flag", "landslide_risk", "heavy_rain_flag",
-        "very_heavy_rain_flag", "extreme_rain_flag",
-    }
-    exclude = target_cols | {
-        "datetime", "sw_rain_intensity_class", "sw_cloudburst_flag",
+    exclude = {
+        "datetime", "imd_rainfall_mm", "rain_intensity_class", "cloudburst_flag",
+        "landslide_risk", "sw_rain_intensity_class", "sw_cloudburst_flag",
         "sw_landslide_risk", "cv_fold",
     }
-    feats = [c for c in master.columns if c not in exclude]
-    _assert_no_target_leakage(feats, target_cols)
-    return feats
-
-
-def _assert_no_target_leakage(feature_cols: list[str], target_cols: set[str]) -> None:
-    """
-    Defensive check run every time features are derived from the master
-    file: if any column name matching a known target (or a pandas '.1'
-    duplicate-suffix variant of one) ends up in the feature list, fail
-    loudly immediately rather than silently training on a leaked column.
-    Cheap insurance against this exact bug recurring after a future edit.
-    """
-    leaked = [c for c in feature_cols
-              if c in target_cols or any(c == f"{t}.1" for t in target_cols)]
-    if leaked:
-        raise ValueError(
-            f"DATA LEAKAGE: target-derived column(s) {leaked} found in feature_cols. "
-            f"Check _feature_cols_from_master()'s exclude set against "
-            f"final_preprocessing.py's TARGET_COLS."
-        )
+    return [c for c in master.columns if c not in exclude]
 
 
 # ==============================================================================
@@ -255,7 +177,7 @@ def task1_regression(ml_ready: Path, feature_cols: list[str], recs: dict, n_iter
     y_val_raw = pd.read_csv(ml_ready / "y_val.csv")["imd_rainfall_mm"]
 
     if strategy == "single":
-        model = XGBRegressor(random_state=RANDOM_STATE, tree_method="hist", n_jobs=XGB_N_JOBS)
+        model = XGBRegressor(random_state=RANDOM_STATE, tree_method="hist")
         search = RandomizedSearchCV(
             model, param_distributions=space, n_iter=n_iter, cv=splits,
             scoring="neg_root_mean_squared_error", random_state=RANDOM_STATE,
@@ -280,7 +202,6 @@ def task1_regression(ml_ready: Path, feature_cols: list[str], recs: dict, n_iter
         modelA = XGBClassifier(
             objective="binary:logistic", scale_pos_weight=spw,
             random_state=RANDOM_STATE, tree_method="hist", eval_metric="logloss",
-            n_jobs=XGB_N_JOBS,
         )
         searchA = RandomizedSearchCV(
             modelA, param_distributions=_RAIN_DETECT_SEARCH_SPACE, n_iter=n_iter,
@@ -297,7 +218,7 @@ def task1_regression(ml_ready: Path, feature_cols: list[str], recs: dict, n_iter
         splits_B = _slice_splits_to_mask(splits, rain_mask)
 
         if len(splits_B) >= 2:
-            modelB = XGBRegressor(random_state=RANDOM_STATE, tree_method="hist", n_jobs=XGB_N_JOBS)
+            modelB = XGBRegressor(random_state=RANDOM_STATE, tree_method="hist")
             searchB = RandomizedSearchCV(
                 modelB, param_distributions=space, n_iter=n_iter, cv=splits_B,
                 scoring="neg_root_mean_squared_error", random_state=RANDOM_STATE,
@@ -309,7 +230,7 @@ def task1_regression(ml_ready: Path, feature_cols: list[str], recs: dict, n_iter
         else:
             print(f"  Too few valid CV folds on rain-only rows ({len(X_rain):,} rows) -- "
                   f"fitting Stage B once with fixed reasonable hyperparameters.")
-            bestB = XGBRegressor(random_state=RANDOM_STATE, tree_method="hist", n_jobs=XGB_N_JOBS, **FALLBACK_PARAMS)
+            bestB = XGBRegressor(random_state=RANDOM_STATE, tree_method="hist", **FALLBACK_PARAMS)
             bestB.fit(X_rain, y_rain_log)
 
         # ---- Combine for final prediction ----
@@ -442,7 +363,6 @@ def task2_intensity(ml_ready: Path, feature_cols: list[str], recs: dict, n_iter:
     model = XGBClassifier(
         objective="multi:softprob", num_class=num_class,
         random_state=RANDOM_STATE, tree_method="hist", eval_metric="mlogloss",
-        n_jobs=XGB_N_JOBS,
     )
     search = RandomizedSearchCV(
         model, param_distributions=space, n_iter=n_iter, cv=splits,
@@ -523,46 +443,6 @@ FALLBACK_PARAMS = dict(
 #  TASK 3 / 4 -- RARE-EVENT BINARY (cloudburst_flag, landslide_risk)
 # ==============================================================================
 
-def _validate_binary_target(y: pd.Series, target_col: str) -> None:
-    """
-    CRITICAL GUARD (root cause of the crash found in testing): if
-    target_col contains anything other than {0, 1}, XGBoost's sklearn
-    wrapper silently detects >2 classes at fit time and switches the model
-    from binary to a multi-class objective mid-search -- with NO error at
-    that point. The failure only shows up later and confusingly, when the
-    "average_precision" scorer calls predict_proba() and gets back an
-    (n_samples, n_classes) array instead of the 1D array a binary scorer
-    expects, and separately in the "Parameters: {'scale_pos_weight'} are
-    not used" warning (scale_pos_weight is a binary-only XGBoost param that
-    a multi-class objective ignores). Both of those are SYMPTOMS; this is
-    the actual cause.
-
-    task_rare_event() assumes cloudburst_flag/landslide_risk are strictly
-    binary 0/1 flags. If your real data has a stray third value (e.g. a
-    risk LEVEL like 0/1/2 instead of a yes/no flag, or a leftover NaN read
-    back as some other value), it will slip through everywhere upstream
-    (preprocessing's own leakage checks only look for target columns
-    appearing in X, not for a target itself having the wrong cardinality)
-    and only surface here, deep inside a slow, wasted hyperparameter
-    search. Failing immediately, with the actual value counts, saves you
-    from waiting through a doomed search first.
-    """
-    vals = sorted(pd.unique(y.dropna()))
-    if len(vals) > 2 or any(v not in (0, 1) for v in vals):
-        counts = y.value_counts(dropna=False).to_dict()
-        raise ValueError(
-            f"'{target_col}' must be strictly binary (0/1) for this rare-event task, but "
-            f"{len(vals)} distinct value(s) were found: {vals}\n"
-            f"  Value counts: {counts}\n"
-            f"This is almost certainly why XGBoost silently switched from a binary to a "
-            f"multi-class objective mid-search (see the 'scale_pos_weight are not used' "
-            f"warning and the average_precision_score shape error in the traceback -- both "
-            f"are symptoms of this, not separate bugs). Check how '{target_col}' is derived "
-            f"in your source data / final_preprocessing.py for any row(s) that ended up with "
-            f"a value other than 0 or 1 before re-running this task."
-        )
-
-
 def task_rare_event(ml_ready: Path, target_col: str, recs: dict, n_iter: int, n_splits: int = 5):
     _header(f"TASK -- {target_col} (rare-event binary)")
 
@@ -570,22 +450,6 @@ def task_rare_event(ml_ready: Path, target_col: str, recs: dict, n_iter: int, n_
     y_full = pd.read_csv(ml_ready / f"y_train_{target_col}_balanced.csv")
     y = y_full[target_col]
     feature_cols = list(X.columns)   # already excludes rolling_precip_24h/72h
-    _validate_binary_target(y, target_col)   # fail fast, before any CV/model work
-
-    # GUARD (found in testing): if this event genuinely never occurred in
-    # the training window (possible with a short record, or a very strict
-    # threshold like the 100mm/3h cloudburst definition), the balanced set
-    # comes back with 0 rows. An empty DataFrame's columns all read back as
-    # dtype 'object', which XGBoost then rejects deep inside its C++ layer
-    # with a confusing "DataFrame.dtypes must be int/float/bool" error that
-    # gives no hint the real problem is "there's nothing to train on."
-    # Fail clearly, here, instead.
-    if len(X) == 0 or int(y.sum()) == 0:
-        print(f"  SKIPPING: {target_col} has zero positive events in the training window -- "
-              f"nothing to learn from. This can happen with a short record or a strict "
-              f"event threshold (e.g. the 100mm/3h cloudburst definition). Collect more data "
-              f"covering at least one real event before training this task.")
-        return None
 
     pos, neg = int(y.sum()), int(len(y) - y.sum())
     scale_pos_weight = round(neg / max(pos, 1), 3)
@@ -598,7 +462,6 @@ def task_rare_event(ml_ready: Path, target_col: str, recs: dict, n_iter: int, n_
 
     X_val = pd.read_csv(ml_ready / "X_val.csv")[feature_cols]
     y_val = pd.read_csv(ml_ready / "y_val.csv")[target_col]
-    _validate_binary_target(y_val, f"{target_col} (in y_val.csv)")
 
     if "block_id" not in y_full.columns:
         print("  WARNING: 'block_id' not found in the balanced y file -- re-run the updated "
@@ -617,7 +480,7 @@ def task_rare_event(ml_ready: Path, target_col: str, recs: dict, n_iter: int, n_
         model = XGBClassifier(
             objective="binary:logistic", scale_pos_weight=scale_pos_weight,
             random_state=RANDOM_STATE, tree_method="hist", eval_metric="aucpr",
-            n_jobs=XGB_N_JOBS, **FALLBACK_PARAMS,
+            **FALLBACK_PARAMS,
         )
         model.fit(X, y)
         best_model, best_params, best_cv_score = model, FALLBACK_PARAMS, None
@@ -625,7 +488,6 @@ def task_rare_event(ml_ready: Path, target_col: str, recs: dict, n_iter: int, n_
         model = XGBClassifier(
             objective="binary:logistic", scale_pos_weight=scale_pos_weight,
             random_state=RANDOM_STATE, tree_method="hist", eval_metric="aucpr",
-            n_jobs=XGB_N_JOBS,
         )
         search = RandomizedSearchCV(
             model, param_distributions=space, n_iter=min(n_iter, 15), cv=splits,
@@ -655,27 +517,6 @@ def task_rare_event(ml_ready: Path, target_col: str, recs: dict, n_iter: int, n_
 # ==============================================================================
 #  HELPERS / MAIN
 # ==============================================================================
-
-def _warn_zero_variance_features(ml_ready: Path, feature_cols: list[str]) -> None:
-    """
-    Informational only -- does not drop or change anything. The spatial/
-    terrain columns added in final_preprocessing.py Step 9C (latitude,
-    longitude, elevation, slope, aspect, terrain_ruggedness_index,
-    distance_to_river_km, land_cover) are constant for this single-station
-    dataset, so a tree-based model can't split on them (zero possible
-    impurity reduction) and they'll show ~0 feature importance -- expected,
-    not a bug. This just surfaces that clearly instead of leaving someone
-    to wonder why 8 features never show up as important. Recomputes cheaply
-    from a single small read of train_ready_master.csv.
-    """
-    master = pd.read_csv(ml_ready / "train_ready_master.csv", usecols=lambda c: c in feature_cols)
-    zero_var = [c for c in feature_cols if c in master.columns and master[c].nunique() <= 1]
-    if zero_var:
-        print(f"  NOTE: {len(zero_var)} feature(s) have zero variance in this data "
-              f"(expected for single-station spatial/terrain fields): {zero_var}")
-        print(f"        These will show ~0 importance until multi-station/gridded data "
-              f"gives them real row-to-row variation.")
-
 
 def _header(title: str) -> None:
     print(f"\n{'='*70}\n  {title}\n{'='*70}")
@@ -708,7 +549,6 @@ def main() -> None:
     print(f"  ml_ready dir : {ml_ready.resolve()}")
     print(f"  features     : {len(feature_cols)}")
     print(f"  n_iter/task  : {args.n_iter}")
-    _warn_zero_variance_features(ml_ready, feature_cols)
 
     results = {}
     if args.task in ("all", "regression"):
@@ -722,9 +562,8 @@ def main() -> None:
         results["landslide"] = task_rare_event(ml_ready, "landslide_risk", recs, args.n_iter)
 
     _header("ALL TASKS COMPLETE")
-    for name, model in results.items():
-        status = "trained + tuned OK" if model is not None else "SKIPPED (no positive events -- see log above)"
-        print(f"  {name}: {status}")
+    for name in results:
+        print(f"  {name}: trained + tuned OK")
 
 
 if __name__ == "__main__":

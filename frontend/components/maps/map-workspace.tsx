@@ -5,9 +5,9 @@ import dynamic from 'next/dynamic'
 import { Maximize2, Minimize2, PanelRightOpen, X } from 'lucide-react'
 import { LayersPanel } from './layers-panel'
 import { RiskBadge } from '@/components/shared/risk-badge'
+import { HAZARD_STATIONS, ALERTS, CURRENT_WEATHER } from '@/lib/mock/data'
 import { useAppStore } from '@/store/use-app-store'
 import { cn } from '@/lib/utils'
-import type { WeatherSnapshot, HazardStation, AlertItem } from '@/types'
 
 const BaseMap = dynamic(() => import('./base-map').then((m) => m.BaseMap), {
   ssr: false,
@@ -21,23 +21,13 @@ const BaseMap = dynamic(() => import('./base-map').then((m) => m.BaseMap), {
   ),
 })
 
-interface MapWorkspaceProps {
-  initialWeather: WeatherSnapshot
-  initialStations: HazardStation[]
-  initialAlerts: AlertItem[]
-}
-
-export function MapWorkspace({
-  initialWeather,
-  initialStations,
-  initialAlerts,
-}: MapWorkspaceProps) {
+export function MapWorkspace() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [layersOpen, setLayersOpen] = useState(true)
   const fullscreen = useAppStore((s) => s.mapFullscreen)
   const setFullscreen = useAppStore((s) => s.setMapFullscreen)
 
-  const selected = initialStations.find((s) => s.id === selectedId)
+  const selected = HAZARD_STATIONS.find((s) => s.id === selectedId)
 
   return (
     <div
@@ -46,7 +36,7 @@ export function MapWorkspace({
         fullscreen ? 'fixed inset-0 z-50 bg-background' : 'h-[calc(100svh-3.5rem)]',
       )}
     >
-      <BaseMap onStationClick={setSelectedId} stations={initialStations} />
+      <BaseMap onStationClick={setSelectedId} />
 
       {/* Top-left: legend / status */}
       <div className="absolute top-4 left-4 z-10 flex flex-col gap-2 max-w-[260px]">
@@ -55,7 +45,7 @@ export function MapWorkspace({
             Region Status
           </p>
           <p className="text-sm mt-1">
-            {initialWeather.condition} · {initialWeather.temperature}°C
+            {CURRENT_WEATHER.condition} · {CURRENT_WEATHER.temperature}°C
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
             {(['low', 'moderate', 'high', 'severe'] as const).map((r) => (
@@ -80,7 +70,7 @@ export function MapWorkspace({
             Active Alerts
           </p>
           <ul className="flex flex-col gap-2">
-            {initialAlerts.slice(0, 3).map((a) => (
+            {ALERTS.slice(0, 3).map((a) => (
               <li key={a.id} className="flex items-center justify-between gap-2">
                 <span className="text-xs truncate">{a.title}</span>
                 <RiskBadge risk={a.severity} />

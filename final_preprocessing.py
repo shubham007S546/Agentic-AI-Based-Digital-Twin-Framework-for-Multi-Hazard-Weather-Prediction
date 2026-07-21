@@ -60,22 +60,6 @@ NEW in this version
                                       rolling/lag features)
   STEP 19: Hyperparameter recommendations -- data-driven search spaces +
                                       scale_pos_weight values saved to JSON
-  STEP 8B (NEW): Humidity trend        -- relative_humidity_change_1h/3h,
-                                      the missing counterpart to the
-                                      existing pressure/temp/dewpoint trend
-                                      features. Computed defensively (only
-                                      fills what's missing; never overwrites
-                                      real upstream values).
-  STEP 9C (NEW): Spatial / terrain features -- latitude, longitude,
-                                      elevation, slope, aspect, terrain
-                                      ruggedness index, distance to river,
-                                      land cover. Constant for this single-
-                                      station dataset (documented caveat in
-                                      the function docstring); wired in so
-                                      the pipeline is multi-station/gridded
-                                      -data ready without further code
-                                      changes, and excluded from scaling to
-                                      avoid a zero-std divide-by-zero.
 
 Output files (in ml_ready/)
 ----------------------------
@@ -167,39 +151,6 @@ DROP_COLS = [
     "mslp",                # 88% missing, redundant with surface_pressure
 ]
 
-# ------------------------------------------------------------------------
-# STATIC SPATIAL / TERRAIN METADATA (Step 9D)
-# ------------------------------------------------------------------------
-# This dataset is a SINGLE weather-station record for Mandi district, HP,
-# so latitude/longitude/elevation/terrain descriptors are constants -- they
-# do not vary row-to-row the way a multi-station dataset would. They are
-# still added as columns (per your request) because:
-#   - They make the feature set self-documenting and station-portable: if
-#     you later merge in a second station (or a gridded product covering
-#     several points across Mandi district), each row's real coordinates
-#     replace these constants and the model can then actually learn
-#     terrain-driven spatial effects.
-#   - A tree-based model (XGBoost etc.) simply ignores a zero-variance
-#     column (no valid split can improve impurity on a constant), so
-#     including it is harmless for a single-station model -- it's a no-op
-#     placeholder rather than something that hurts current performance.
-# If your source CSV already carries real per-row values for any of these
-# (e.g. because you've since merged multiple stations/grid points), Step 9D
-# below will detect and KEEP those real values instead of overwriting them.
-#
-# Values below are approximate for Mandi town, Himachal Pradesh -- replace
-# with your station's exact surveyed coordinates/DEM-derived values if known.
-MANDI_STATION_METADATA = {
-    "latitude":                 31.7076,   # deg N
-    "longitude":                76.9319,   # deg E
-    "elevation":                761.0,     # metres above sea level
-    "slope":                    18.5,      # deg, local terrain slope (DEM-derived estimate)
-    "aspect":                   225.0,     # deg (0-360, compass direction terrain faces; SW here)
-    "terrain_ruggedness_index": 145.0,     # TRI (metres), moderate-to-high Himalayan foothill terrain
-    "distance_to_river_km":     1.2,       # approx. distance to nearest major river (Beas)
-    "land_cover":                2,        # categorical code: 0=water,1=urban,2=forest,3=cropland,4=barren/rock
-}
-
 # ==============================================================================
 #  FEATURE COLUMNS  (X -- model inputs)
 #
@@ -247,8 +198,6 @@ FEATURE_COLS = [
     "temp_change_6h",
     "dewpoint_change_1h",
     "dewpoint_change_3h",
-    "relative_humidity_change_1h",   # NEW -- humidity trend (rising RH often precedes rain)
-    "relative_humidity_change_3h",   # NEW
     # -- Antecedent-condition features (NEW, built from precip_lag_1h only --
     #    i.e. based on PRIOR hours, never the current hour's rain status, to
     #    avoid leaking the very thing these tasks are trying to predict) --
@@ -276,18 +225,6 @@ FEATURE_COLS = [
     "is_weekend",     # NEW -- low predictive value for weather but nearly free;
                        # kept since some anthropogenic/reporting patterns can
                        # correlate with day-of-week (station staffing gaps etc.)
-    # -- Spatial / terrain features (NEW, Step 9D) --
-    # Constant for this single-station dataset today; wired in so the
-    # pipeline is ready for multi-station/gridded data without code changes.
-    # See MANDI_STATION_METADATA docstring above for details/caveats.
-    "latitude",
-    "longitude",
-    "elevation",
-    "slope",
-    "aspect",
-    "terrain_ruggedness_index",
-    "distance_to_river_km",
-    "land_cover",
 ]
 
 # ==============================================================================
@@ -314,16 +251,6 @@ DO_NOT_SCALE = [
     "hour", "month", "day_of_year", "season", "is_monsoon",
     "wind_direction_10m",
     "week_of_year", "day_of_week", "is_weekend",   # NEW -- categorical/ordinal calendar
-    # NEW -- spatial/terrain fields. land_cover is a categorical code and
-    # aspect is a circular compass bearing (0-360, like wind_direction_10m),
-    # neither of which StandardScaler should touch. latitude/longitude/
-    # elevation/slope/terrain_ruggedness_index/distance_to_river_km are
-    # CONSTANT for this single-station dataset -- StandardScaler would
-    # divide by a std of 0 and produce NaN/inf, so they're excluded here
-    # too. Remove them from this list once real per-row multi-station
-    # values with genuine variance are present.
-    "latitude", "longitude", "elevation", "slope", "aspect",
-    "terrain_ruggedness_index", "distance_to_river_km", "land_cover",
 ]
 
 # ==============================================================================
@@ -701,14 +628,7 @@ def fix_lag_nans(df: pd.DataFrame) -> pd.DataFrame:
     """
     _header("STEP 8 -- Fix Lag NaN Edge Values")
     fixed = False
-    # FIX (bug found during testing): the original list here only covered
-    # 1h/3h/6h, but FEATURE_COLS also includes the longer 12h/24h/48h/72h
-    # lag windows added for the extended forecast horizon. Those longer
-    # lags have edge-effect NaNs in the first up to 72 rows of the whole
-    # series, same reason as the short lags -- left unfilled, they slipped
-    # through as real NaNs into X_train and failed Step 14's validation.
-    for col in ["precip_lag_1h", "precip_lag_3h", "precip_lag_6h",
-                "precip_lag_12h", "precip_lag_24h", "precip_lag_48h", "precip_lag_72h"]:
+    for col in ["precip_lag_1h", "precip_lag_3h", "precip_lag_6h"]:
         if col in df.columns:
             n = df[col].isna().sum()
             if n > 0:
@@ -717,59 +637,6 @@ def fix_lag_nans(df: pd.DataFrame) -> pd.DataFrame:
                 fixed = True
     if not fixed:
         print(f"  No lag NaNs found.")
-    return df
-
-
-# ==============================================================================
-#  STEP 8B -- HUMIDITY TREND FEATURES (relative_humidity_change_1h/3h)
-# ==============================================================================
-
-def add_humidity_trend(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    pressure_change_*, temp_change_*, and dewpoint_change_* are assumed to
-    already exist in the source CSV (built upstream in Stage A), but the
-    upstream pipeline had no equivalent humidity-trend feature. Rising
-    relative humidity over the last 1-3 hours is itself a useful precursor
-    signal for rain (moistening boundary layer ahead of convection), so it
-    belongs alongside the other *_change_* trend features.
-
-    Computed here (not assumed pre-built) as a simple hourly diff:
-      relative_humidity_change_Nh = RH(t) - RH(t - N hours)
-
-    If the source CSV already provides these columns (e.g. a future Stage A
-    update adds them upstream), this step leaves the existing values alone
-    and only fills in genuinely missing ones -- it never overwrites real
-    upstream data.
-    """
-    _header("STEP 8B -- Humidity Trend Features (relative_humidity_change_1h/3h)")
-
-    if "relative_humidity" not in df.columns:
-        print("  relative_humidity column not found -- skipping (nothing to derive from).")
-        return df
-
-    for hrs, col in [(1, "relative_humidity_change_1h"), (3, "relative_humidity_change_3h")]:
-        if col in df.columns:
-            n_miss = int(df[col].isna().sum())
-            if n_miss:
-                computed = df["relative_humidity"].diff(hrs)
-                mask = df[col].isna()
-                df.loc[mask, col] = computed[mask]
-                print(f"  {col:<28}: already present -- filled {n_miss} missing value(s)")
-            else:
-                print(f"  {col:<28}: already present, no missing values -- left untouched")
-        else:
-            df[col] = df["relative_humidity"].diff(hrs)
-            print(f"  {col:<28}: derived (RH(t) - RH(t-{hrs}h))  mean={df[col].mean():.3f}")
-
-    # Same edge-effect NaNs as the other lag/diff features (first N rows of
-    # the whole series have no prior hour to diff against) -- fill with 0,
-    # i.e. assume no humidity change at the very start of the record.
-    for col in ["relative_humidity_change_1h", "relative_humidity_change_3h"]:
-        n = df[col].isna().sum()
-        if n:
-            df[col] = df[col].fillna(0.0)
-            print(f"  {col:<28}: filled {n} edge-effect NaN(s) with 0")
-
     return df
 
 
@@ -858,59 +725,6 @@ def detect_outliers(df: pd.DataFrame, output_dir: Path) -> pd.DataFrame:
     report_cols = ["datetime"] + cols
     df.loc[is_outlier, report_cols].to_csv(output_dir / "outlier_report.csv", index=False)
     print(f"  Saved: outlier_report.csv ({n_out:,} flagged rows, for manual review)")
-    return df
-
-
-# ==============================================================================
-#  STEP 9C -- SPATIAL / TERRAIN FEATURES
-#  (latitude, longitude, elevation, slope, aspect, TRI, dist-to-river, land cover)
-# ==============================================================================
-
-def add_spatial_features(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Adds the 8 spatial/terrain columns recommended for a Himachal Pradesh
-    rainfall/multi-hazard model: latitude, longitude, elevation, slope,
-    aspect, terrain_ruggedness_index, distance_to_river_km, land_cover.
-    Terrain strongly shapes orographic rainfall and landslide risk in HP,
-    so these are worth carrying even in a single-station setup.
-
-    IMPORTANT CAVEAT (single-station dataset): this source file is one
-    station's hourly time series, so these values are the SAME constant on
-    every row here. A tree-based model can't learn anything from a
-    zero-variance column, so today they act as documentation/placeholders
-    rather than active predictors -- they earn their keep once you add a
-    second station or a gridded terrain product with real row-to-row
-    variation (each grid cell/station gets its own true lat/lon/elevation/
-    slope/aspect/TRI/river-distance/land-cover instead of the Mandi
-    constant). DO_NOT_SCALE already excludes them so a zero standard
-    deviation doesn't blow up StandardScaler.
-
-    If the input CSV already has real per-row values for any of these
-    columns (e.g. you've since merged additional stations), this function
-    detects that and KEEPS the existing values -- it only fills in columns
-    that are completely absent.
-    """
-    _header("STEP 9C -- Spatial / Terrain Features")
-
-    added, kept = [], []
-    for col, val in MANDI_STATION_METADATA.items():
-        if col in df.columns:
-            n_miss = int(df[col].isna().sum())
-            if n_miss:
-                df[col] = df[col].fillna(val)
-                print(f"  {col:<26}: already present -- filled {n_miss} missing value(s) "
-                      f"with Mandi default ({val})")
-            kept.append(col)
-        else:
-            df[col] = val
-            added.append(col)
-
-    if added:
-        print(f"  Added as constants (Mandi station default): {added}")
-    if kept:
-        print(f"  Already present in source data -- left as-is (only NaNs backfilled): {kept}")
-    print("  NOTE: these are constant for this single-station dataset -- see docstring.")
-    print("  They become genuinely predictive once multi-station/gridded terrain data is used.")
     return df
 
 
@@ -1717,10 +1531,8 @@ def main() -> None:
     df = impute_cape(df)           # Step 7
     df = derive_missing_met_vars(df)  # Step 7B: physically derive dewpoint/wind u,v (NEW)
     df = fix_lag_nans(df)          # Step 8
-    df = add_humidity_trend(df)    # Step 8B: humidity trend feature (NEW)
     df = engineer_features(df)     # Step 9: +5 accuracy features
     df = detect_outliers(df, output_dir)  # Step 9B: Isolation Forest (NEW, flag only)
-    df = add_spatial_features(df)  # Step 9C: spatial/terrain features (NEW)
     df = reorder_columns(df)       # Step 10
 
     train, val, test = time_split(df)                          # Step 11

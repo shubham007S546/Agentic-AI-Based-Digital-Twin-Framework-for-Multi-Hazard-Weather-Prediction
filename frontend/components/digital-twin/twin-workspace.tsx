@@ -4,9 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { FastForward, Pause, Play, RotateCcw, Waves } from 'lucide-react'
 import { RiskBadge } from '@/components/shared/risk-badge'
-import { PREDICTION_TIMELINE } from '@/lib/mock/data'
+import { HAZARD_STATIONS, RIVER_GAUGES, PREDICTION_TIMELINE } from '@/lib/mock/data'
 import { cn } from '@/lib/utils'
-import type { HazardStation, RiverGauge } from '@/types'
 
 const BaseMap = dynamic(() => import('@/components/maps/base-map').then((m) => m.BaseMap), {
   ssr: false,
@@ -29,12 +28,7 @@ const SCENARIOS = [
   { id: 'dam-release', label: 'Pandoh Dam Release' },
 ] as const
 
-interface DigitalTwinWorkspaceProps {
-  initialStations: HazardStation[]
-  initialGauges: RiverGauge[]
-}
-
-export function DigitalTwinWorkspace({ initialStations, initialGauges }: DigitalTwinWorkspaceProps) {
+export function DigitalTwinWorkspace() {
   const [mode, setMode] = useState<TwinMode>('live')
   const [scenario, setScenario] = useState<(typeof SCENARIOS)[number]['id']>('baseline')
   const [hourIndex, setHourIndex] = useState(24)
@@ -54,7 +48,7 @@ export function DigitalTwinWorkspace({ initialStations, initialGauges }: Digital
   }, [playing, speed])
 
   const frame = PREDICTION_TIMELINE[Math.min(hourIndex, PREDICTION_TIMELINE.length - 1)]
-  const severeStations = initialStations.filter((s) => s.risk === 'severe' || s.risk === 'high')
+  const severeStations = HAZARD_STATIONS.filter((s) => s.risk === 'severe' || s.risk === 'high')
 
   return (
     <div className="relative overflow-hidden h-[calc(100svh-3.5rem)]">
@@ -141,7 +135,7 @@ export function DigitalTwinWorkspace({ initialStations, initialGauges }: Digital
             River Gauges
           </p>
           <ul className="flex flex-col gap-2.5">
-            {initialGauges.map((g) => {
+            {RIVER_GAUGES.map((g) => {
               const pct = Math.min(100, Math.round((g.level / g.dangerLevel) * 100))
               return (
                 <li key={g.id}>

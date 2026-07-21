@@ -1,11 +1,11 @@
 'use client'
 
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
 import { Siren, MessageSquare, Radio, Smartphone, CheckCheck } from 'lucide-react'
 import { GlassCard } from '@/components/shared/glass-card'
 import { RiskBadge } from '@/components/shared/risk-badge'
-import { getActiveAlerts } from '@/lib/api/alerts'
-import type { RiskLevel, AlertItem } from '@/types'
+import { ALERTS } from '@/lib/mock/data'
+import type { RiskLevel } from '@/types'
 import { cn } from '@/lib/utils'
 
 const SEVERITIES: ('all' | RiskLevel)[] = ['all', 'severe', 'high', 'moderate', 'low']
@@ -18,7 +18,7 @@ const CHANNELS = [
 ]
 
 function timeAgo(iso: string) {
-  const diffMs = new Date().getTime() - new Date(iso).getTime()
+  const diffMs = new Date('2026-07-15T07:30:00Z').getTime() - new Date(iso).getTime()
   const mins = Math.round(diffMs / 60000)
   if (mins < 60) return `${mins} min ago`
   const hrs = Math.round(mins / 60)
@@ -29,15 +29,10 @@ function timeAgo(iso: string) {
 export function AlertCentre() {
   const [severity, setSeverity] = useState<(typeof SEVERITIES)[number]>('all')
   const [acknowledged, setAcknowledged] = useState<Record<string, boolean>>({})
-  const [alerts, setAlerts] = useState<AlertItem[]>([])
-
-  useEffect(() => {
-    getActiveAlerts().then(setAlerts).catch(console.error)
-  }, [])
 
   const filtered = useMemo(
-    () => alerts.filter((a) => severity === 'all' || a.severity === severity),
-    [alerts, severity],
+    () => ALERTS.filter((a) => severity === 'all' || a.severity === severity),
+    [severity],
   )
 
   return (

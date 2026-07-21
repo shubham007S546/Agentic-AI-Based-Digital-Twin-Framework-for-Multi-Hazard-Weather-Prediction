@@ -4,7 +4,7 @@ import { PageHeader } from '@/components/shared/page-header'
 import { StatCard } from '@/components/shared/stat-card'
 import { GlassCard } from '@/components/shared/glass-card'
 import { GenericAreaChart } from '@/components/charts/extra-charts'
-import { getRiverGauges } from '@/lib/api/hydrology'
+import { RIVER_GAUGES } from '@/lib/mock/data'
 
 export const metadata: Metadata = {
   title: 'Flood Prediction | VARUNA',
@@ -20,10 +20,7 @@ const LEVEL_FORECAST = Array.from({ length: 36 }, (_, i) => ({
 const TREND_ICON = { rising: ArrowUp, falling: ArrowDown, steady: Minus }
 const TREND_CLASS = { rising: 'text-destructive', falling: 'text-success', steady: 'text-muted-foreground' }
 
-export default async function FloodPage() {
-  const gauges = await getRiverGauges()
-  const highestGauge = gauges.reduce((a, b) => (a.discharge > b.discharge ? a : b), gauges[0])
-
+export default function FloodPage() {
   return (
     <div className="p-4 lg:p-6 flex flex-col gap-6">
       <PageHeader
@@ -33,7 +30,7 @@ export default async function FloodPage() {
 
       <section aria-label="Flood indicators" className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard label="Basins on Watch" value="2" icon={Waves} sub="Beas · Parvati" tone="warning" />
-        <StatCard label="Peak Inflow" value={highestGauge?.discharge ?? 1240} unit="m³/s" icon={TrendingUp} sub={`${highestGauge?.river} at ${highestGauge?.station}`} tone="danger" />
+        <StatCard label="Pandoh Inflow" value="1240" unit="m³/s" icon={TrendingUp} sub="+18% in 6h" tone="danger" />
         <StatCard label="Time to Danger" value="~14" unit="h" icon={Timer} sub="Beas at Pandoh (projected)" tone="warning" />
         <StatCard label="Soil Saturation" value="86" unit="%" icon={Droplets} sub="Top 1m layer, basin mean" tone="warning" />
       </section>
@@ -71,7 +68,7 @@ export default async function FloodPage() {
               </tr>
             </thead>
             <tbody>
-              {gauges.map((g) => {
+              {RIVER_GAUGES.map((g) => {
                 const pct = Math.min(100, Math.round((g.level / g.dangerLevel) * 100))
                 const TrendIcon = TREND_ICON[g.trend]
                 return (

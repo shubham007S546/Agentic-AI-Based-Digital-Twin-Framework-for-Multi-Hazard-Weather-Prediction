@@ -1,25 +1,18 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Bell, Menu, Search, X, Radar } from 'lucide-react'
 import { NAV_SECTIONS, PLATFORM_NAME } from '@/lib/constants/navigation'
+import { ALERTS } from '@/lib/mock/data'
 import { RiskBadge } from '@/components/shared/risk-badge'
 import { cn } from '@/lib/utils'
-import { ThemeToggle } from '@/components/shared/theme-toggle'
-import { getActiveAlerts } from '@/lib/api/alerts'
-import type { AlertItem } from '@/types'
 
 export function Topbar() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [alertsOpen, setAlertsOpen] = useState(false)
-  const [alerts, setAlerts] = useState<AlertItem[]>([])
   const pathname = usePathname()
-
-  useEffect(() => {
-    getActiveAlerts(5).then(setAlerts).catch(console.error)
-  }, [])
 
   const current = NAV_SECTIONS.flatMap((s) => s.items).find((i) => i.href === pathname)
 
@@ -55,8 +48,6 @@ export function Topbar() {
           />
         </div>
 
-        <ThemeToggle />
-
         <div className="relative">
           <button
             type="button"
@@ -66,7 +57,7 @@ export function Topbar() {
           >
             <Bell className="size-4" />
             <span className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-destructive text-[9px] font-bold text-white">
-              {alerts.length}
+              {ALERTS.length}
             </span>
           </button>
           {alertsOpen && (
@@ -75,22 +66,18 @@ export function Topbar() {
                 Active Alerts
               </p>
               <ul className="flex flex-col gap-1 max-h-80 overflow-y-auto">
-                {alerts.length === 0 ? (
-                  <li className="p-4 text-center text-xs text-muted-foreground">No active alerts</li>
-                ) : (
-                  alerts.map((a) => (
-                    <li key={a.id} className="rounded-lg p-2 hover:bg-secondary/60">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-medium">{a.title}</span>
-                        <RiskBadge risk={a.severity} />
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{a.message}</p>
-                      <p className="text-[10px] text-muted-foreground mt-1 font-mono">
-                        {a.district}
-                      </p>
-                    </li>
-                  ))
-                )}
+                {ALERTS.map((a) => (
+                  <li key={a.id} className="rounded-lg p-2 hover:bg-secondary/60">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium">{a.title}</span>
+                      <RiskBadge risk={a.severity} />
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{a.message}</p>
+                    <p className="text-[10px] text-muted-foreground mt-1 font-mono">
+                      {a.district}
+                    </p>
+                  </li>
+                ))}
               </ul>
             </div>
           )}

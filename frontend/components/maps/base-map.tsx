@@ -3,9 +3,8 @@
 import { useEffect, useRef } from 'react'
 import maplibregl, { Map as MLMap } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { RISK_COLORS } from '@/lib/mock/data'
+import { HAZARD_STATIONS, RISK_COLORS } from '@/lib/mock/data'
 import { useAppStore } from '@/store/use-app-store'
-import type { HazardStation } from '@/types'
 
 const BASEMAP_TILES: Record<string, { tiles: string[]; attribution: string }> = {
   dark: {
@@ -51,13 +50,11 @@ function buildStyle(basemap: string): maplibregl.StyleSpecification {
 }
 
 export function BaseMap({
-  stations = [],
   interactive = true,
   showStations = true,
   className,
   onStationClick,
 }: {
-  stations?: HazardStation[]
   interactive?: boolean
   showStations?: boolean
   className?: string
@@ -108,7 +105,7 @@ export function BaseMap({
     markersRef.current = []
     if (!showStations || !riskActive) return
 
-    stations.forEach((st) => {
+    HAZARD_STATIONS.forEach((st) => {
       const el = document.createElement('button')
       el.type = 'button'
       el.setAttribute('aria-label', `${st.name} station, ${st.risk} risk`)
@@ -139,11 +136,5 @@ export function BaseMap({
     })
   }, [showStations, riskActive, basemap, onStationClick])
 
-  return (
-    <div
-      ref={containerRef}
-      className={className ?? 'absolute inset-0'}
-      style={{ width: '100%', height: '100%', minHeight: 'inherit' }}
-    />
-  )
+  return <div ref={containerRef} className={className ?? 'absolute inset-0'} />
 }

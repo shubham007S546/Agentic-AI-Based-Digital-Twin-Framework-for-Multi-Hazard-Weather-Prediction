@@ -3,16 +3,15 @@ import { Siren, Clock, Send, ShieldAlert } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import { StatCard } from '@/components/shared/stat-card'
 import { AlertCentre } from '@/components/alerts/alert-centre'
-import { getActiveAlerts } from '@/lib/api/alerts'
+import { ALERTS } from '@/lib/mock/data'
 
 export const metadata: Metadata = {
   title: 'Alert Centre | VARUNA',
   description: 'Operational alert management — active warnings, dispatch channels and escalation protocol.',
 }
 
-export default async function AlertsPage() {
-  const alerts = await getActiveAlerts(50)
-  const severe = alerts.filter((a) => a.severity === 'severe').length
+export default function AlertsPage() {
+  const severe = ALERTS.filter((a) => a.severity === 'severe').length
 
   return (
     <div className="p-4 lg:p-6 flex flex-col gap-6">
@@ -22,7 +21,7 @@ export default async function AlertsPage() {
       />
 
       <section aria-label="Alert summary" className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard label="Active Alerts" value={alerts.length} icon={Siren} sub={`${severe} severe`} tone={severe > 0 ? 'danger' : 'default'} />
+        <StatCard label="Active Alerts" value={ALERTS.length} icon={Siren} sub={`${severe} severe`} tone={severe > 0 ? 'danger' : 'default'} />
         <StatCard label="Avg Lead Time" value="4.6" unit="h" icon={Clock} sub="Model trigger to dispatch" tone="success" />
         <StatCard label="Dispatched Today" value={12} icon={Send} sub="Across all channels" />
         <StatCard label="False Alarm Rate" value="8.2" unit="%" icon={ShieldAlert} sub="Rolling 90 days" />

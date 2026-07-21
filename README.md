@@ -1,471 +1,533 @@
-# 🌦️ Agentic AI-Based Digital Twin Framework
-## Rainfall Prediction & Extreme Weather Intelligence — Himachal Pradesh
+# Agentic AI-Based Digital Twin Framework for Rainfall Prediction and Extreme Weather Intelligence
 
-> **Enterprise-grade AI platform for multi-hazard disaster prediction, digital twin simulation, and early warning generation.**
-> Designed for research publication and production deployment in Mandi, Kullu, and Chamba districts.
+A modular environmental data engineering and machine learning framework for collecting, validating, modeling, and organizing heterogeneous datasets for rainfall prediction, cloudburst forecasting, landslide risk analysis, and digital twin development in Himachal Pradesh.
 
----
+**Current Focus:** Machine Learning Modeling & Frontend Development
 
-## 🗺️ Table of Contents
+**Target Districts**
 
-1. [Project Overview](#-project-overview)
-2. [Architecture Overview](#-architecture-overview)
-3. [Technology Stack](#-technology-stack)
-4. [Backend — Step-by-Step Setup Guide](#-backend--step-by-step-setup-guide)
-5. [Project Structure](#-project-structure)
-6. [API Reference Summary](#-api-reference-summary)
-7. [Environment Variables](#-environment-variables)
-8. [Running the Backend Locally](#-running-the-backend-locally)
-9. [Running Background Workers](#-running-background-workers)
-10. [Development Workflow](#-development-workflow)
-11. [Phase Completion Status](#-phase-completion-status)
-12. [Contributing](#-contributing)
+- Mandi
+- Kullu
+- Chamba
 
 ---
 
-## 🎯 Project Overview
+# Project Overview
 
-This is a **multi-discipline research platform** that integrates:
+The objective of this project is to build a scalable end-to-end pipeline that collects, validates, organizes, and models multi-source environmental datasets, surfaced through an interactive frontend and (eventually) an agentic AI-driven digital twin.
 
-| Domain | Capability |
+The project supports:
+
+- Rainfall Prediction
+- Cloudburst Prediction
+- Landslide Risk Prediction
+- Flash Flood Prediction
+- Digital Twin Development
+- Disaster Intelligence
+- Decision Support Systems
+
+Data engineering, preprocessing, and feature engineering are complete. The project has since moved into **machine learning modeling** (tree-based, ensemble, deep learning, and transformer architectures) and **frontend development**, with Agentic AI and full Digital Twin integration to follow.
+
+---
+
+# Project Workflow
+
+```
+External Data Sources
+        │
+        ▼
+Collector Layer
+        │
+        ▼
+Authentication & Validation
+        │
+        ▼
+Metadata Generation
+        │
+        ▼
+Raw Dataset Repository
+        │
+        ▼
+Preprocessing
+        │
+        ▼
+Feature Engineering
+        │
+        ▼
+Master Dataset
+        │
+        ▼
+Machine Learning  ◄── current stage
+        │
+        ▼
+Frontend / Visualization  ◄── current stage
+        │
+        ▼
+Agentic AI
+        │
+        ▼
+Digital Twin
+        │
+        ▼
+Prediction & Early Warning
+```
+
+---
+
+# Project Structure
+
+```
+Weather_Data_Project/
+
+├── collectors/
+│   ├── openmeteo_collector.py
+│   ├── imd_collector.py
+│   ├── era5_collector.py
+│   ├── era5_land_collector.py
+│   ├── nasa_collector.py
+│   ├── modis_collector.py
+│   ├── datagov_collector.py
+│   ├── wris_collector.py
+│   ├── census_collector.py
+│   ├── climate_index_collector.py
+│   ├── hpsdma_collector.py
+│   ├── infrastructure_collector.py
+│   └── reliefweb_collector.py
+
+├── config/
+│   ├── config.yaml
+│   └── config.example.yaml
+
+├── datasets/
+│   ├── source_1_imd/
+│   ├── source_2_nasa_gpm/
+│   ├── source_3_datagov/
+│   ├── source_4_era5/
+│   ├── source_5_openmeteo/
+│   ├── nasa/
+│   ├── digital_twin/
+│   └── merged_dataset/
+
+├── feature_engineering/
+
+├── final_preprocessing.py        # Stage B: ML-ready preprocessing pipeline
+
+├── ml_ready/                     # X/y train-val-test splits, scaler params,
+│                                  # class weights, temporal CV folds, etc.
+
+├── machine_learning_module/
+│   ├── models/
+│   │   ├── common/               # BaseModel, BaseTrainer, BaseEvaluator,
+│   │   │                         # ModelRegistry, ModelComparator, torch_utils
+│   │   ├── machine_learning/
+│   │   │   ├── random_forest/
+│   │   │   ├── xgboost/
+│   │   │   ├── lightgbm/
+│   │   │   └── two_stage_rainfall/
+│   │   ├── deep_learning/        # LSTM / GRU / TCN
+│   │   ├── ensemble/             # stacking / voting / weighted_average
+│   │   └── transformer/          # TFT-Lite
+│   ├── artifacts/                # trained model.joblib + metrics per experiment
+│   ├── logs/
+│   └── ml_ready/ (symlink or copy of root ml_ready/, used at run time)
+
+├── frontend/                     # Next.js application
+│   ├── app/
+│   ├── components/
+│   ├── lib/
+│   ├── store/
+│   ├── types/
+│   └── public/
+
+├── digital_twin/
+│   ├── climate_indices/
+│   ├── disaster_history/
+│   ├── hydrology/
+│   ├── infrastructure/
+│   ├── metadata/
+│   ├── population/
+│   ├── terrain/
+│   └── vegetation/
+
+├── evaluation/
+├── experiments/
+├── reports/
+├── utils/
+├── logs/
+└── README.md
+```
+
+---
+
+# Implemented Collectors
+
+| Collector | Status |
+|------------|---------|
+| Open-Meteo | ✅ Completed |
+| IMD | ✅ Completed |
+| NASA GPM | ✅ Completed |
+| MODIS (AppEEARS) | ✅ Completed |
+| ERA5 | ✅ Completed |
+| ERA5-Land | ✅ Completed |
+| India WRIS | ✅ Completed |
+| Data.gov | ✅ Completed |
+| Census | ✅ Completed |
+| Climate Indices | ✅ Completed |
+| HPSDMA | ✅ Completed |
+| Infrastructure | 🔄 Under Development |
+| ReliefWeb | ⏳ Pending API Approval |
+
+---
+
+# Machine Learning Modeling
+
+All models are trained and evaluated through a shared `BaseModel` /
+`BaseTrainer` / `BaseEvaluator` framework in `machine_learning_module/models/`,
+so every algorithm — tree-based, ensemble, deep learning, or transformer —
+follows the same config → train → evaluate → predict → hyperparameter-tune
+CLI pattern.
+
+## Algorithms implemented
+
+| Category | Algorithms |
 |---|---|
-| 🌧️ **Weather Intelligence** | Real-time and historical data from IMD, Open-Meteo, NASA GPM, ERA5 |
-| 🤖 **Agentic AI** | 12 autonomous AI agents for monitoring, prediction, reporting, and simulation |
-| 🧠 **ML Inference** | Random Forest, XGBoost, LightGBM, LSTM, CNN-LSTM, Transformer, TFT |
-| 🌍 **Digital Twin** | Synchronized district-level simulation with scenario replay |
-| 🚨 **Early Warning** | Cloudburst, Landslide, Flash Flood alert generation |
-| 📊 **Research Analytics** | Explainability (SHAP), feature importance, model comparison |
+| Tree-based | Random Forest, XGBoost, LightGBM |
+| Two-stage | Classifier (rain/no-rain) + Regressor (amount), for zero-inflated targets |
+| Ensemble | Stacking, Voting, Weighted Average (over any combination of the above + deep learning) |
+| Deep Learning | LSTM, GRU, TCN (Temporal Convolutional Network) |
+| Transformer | TFT-Lite (Temporal Fusion Transformer: variable selection network + LSTM encoder + causal self-attention) |
 
-**Target Districts:** Mandi · Kullu · Chamba (Himachal Pradesh, India)
+## Current best result (`imd_rainfall_mm`, hourly regression)
 
----
-
-## 🏗️ Architecture Overview
-
-```
-┌────────────────────────────────────────────────────────┐
-│                   Next.js Frontend                     │
-│           (Dashboard · Maps · Reports · Alerts)        │
-└──────────────────────────┬─────────────────────────────┘
-                           │  HTTPS  /  WebSocket
-┌──────────────────────────▼─────────────────────────────┐
-│              FastAPI Backend (Python 3.12)              │
-│                                                        │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐             │
-│  │  Auth    │  │ Weather  │  │Predictions│             │
-│  │  Router  │  │  Router  │  │  Router  │             │
-│  └──────────┘  └──────────┘  └──────────┘             │
-│                                                        │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │  Service Layer (Business Logic)                  │  │
-│  │  AuthService · WeatherService · PredictionService│  │
-│  └─────────────────────┬────────────────────────────┘  │
-│                        │                               │
-│  ┌─────────────────────▼────────────────────────────┐  │
-│  │  Repository Layer (Data Access)                  │  │
-│  │  UserRepo · WeatherRepo · PredictionRepo         │  │
-│  └────────┬────────────────────┬────────────────────┘  │
-└───────────┼────────────────────┼────────────────────────┘
-            │                    │
-  ┌─────────▼──────┐   ┌─────────▼──────┐
-  │  PostgreSQL 16  │   │   Redis 7.x    │
-  │  (Primary DB)   │   │  (Cache / RL)  │
-  └─────────────────┘   └────────────────┘
-            │
-  ┌─────────▼──────┐   ┌────────────────┐
-  │   MinIO S3     │   │  Celery Workers │
-  │  (Model Store) │   │  (Background)   │
-  └─────────────────┘   └────────────────┘
-```
-
----
-
-## 🛠️ Technology Stack
-
-| Layer | Technology |
-|---|---|
-| **Language** | Python 3.12 |
-| **API Framework** | FastAPI (async, Pydantic v2) |
-| **Database** | PostgreSQL 16 (asyncpg driver) |
-| **ORM** | SQLAlchemy 2.0 (async, type-annotated) |
-| **Migrations** | Alembic |
-| **Cache / Rate Limiting** | Redis 7 (redis-py asyncio) |
-| **Background Jobs** | Celery + Celery Beat |
-| **Object Storage** | MinIO (S3-compatible) |
-| **Observability** | OpenTelemetry + Prometheus + Grafana |
-| **Logging** | Structlog (JSON) |
-| **Auth** | JWT (PyJWT) + bcrypt (passlib) |
-| **ML** | scikit-learn, XGBoost, LightGBM, PyTorch, ONNX |
-
----
-
-## ⚡ Backend — Step-by-Step Setup Guide
-
-### Prerequisites
-
-Ensure you have the following installed:
-
-- Python **3.12+**
-- Docker Desktop
-- `uv` or `pip`
-
-### Step 1 — Clone & Navigate to Backend
-
-```bash
-git clone <repo-url>
-cd Weather_Data_Project/backend
-```
-
-### Step 2 — Create Virtual Environment
-
-```bash
-# Using uv (recommended, fast)
-pip install uv
-uv venv --python 3.12
-source .venv/bin/activate      # Linux/macOS
-.venv\Scripts\activate         # Windows
-```
-
-### Step 3 — Install Dependencies
-
-```bash
-uv pip install -e ".[dev]"
-# or, using pip:
-pip install -e ".[dev]"
-```
-
-### Step 4 — Configure Environment Variables
-
-```bash
-cp .env.example .env
-# Edit .env with your values (DB password, Redis URL, secret keys etc.)
-```
-
-See [Environment Variables](#-environment-variables) section for a full reference.
-
-### Step 5 — Start Infrastructure (Docker)
-
-```bash
-# From project root
-docker-compose up -d postgres redis minio
-```
-
-Or create a minimal `docker-compose.yml` inside `/backend` if needed (see `docs/docker-compose.md`).
-
-### Step 6 — Run Database Migrations
-
-```bash
-# Generate the first migration from your ORM models
-alembic revision --autogenerate -m "initial_schema"
-
-# Apply all pending migrations
-alembic upgrade head
-```
-
-### Step 7 — Start the API Server
-
-```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-Visit:
-- 📖 **Swagger UI** → [http://localhost:8000/docs](http://localhost:8000/docs)
-- 📘 **ReDoc** → [http://localhost:8000/redoc](http://localhost:8000/redoc)
-- ❤️ **Health** → [http://localhost:8000/api/v1/health](http://localhost:8000/api/v1/health)
-
-### Step 8 — Start Background Workers
-
-```bash
-# Celery Worker (processes tasks from queue)
-celery -A app.workers.celery_app worker --loglevel=info -Q weather,agents
-
-# Celery Beat (triggers scheduled tasks, e.g., hourly weather poll)
-celery -A app.workers.celery_app beat --loglevel=info
-```
-
----
-
-## 📁 Project Structure
-
-```
-backend/
-├── app/
-│   ├── api/
-│   │   └── v1/
-│   │       ├── controllers/        # HTTP → Service delegation layer
-│   │       │   ├── auth_controller.py
-│   │       │   ├── user_controller.py
-│   │       │   ├── weather_controller.py
-│   │       │   └── prediction_controller.py
-│   │       ├── routers/            # FastAPI router definitions
-│   │       │   ├── auth_router.py
-│   │       │   ├── user_router.py
-│   │       │   ├── weather_router.py
-│   │       │   ├── prediction_router.py
-│   │       │   └── health_router.py
-│   │       └── router.py           # Master v1 router aggregate
-│   │
-│   ├── cache/
-│   │   ├── redis_client.py         # Async Redis connection pools
-│   │   └── cache_manager.py        # High-level cache abstraction
-│   │
-│   ├── core/
-│   │   ├── config.py               # Pydantic Settings singleton
-│   │   ├── constants.py            # System-wide constants, RBAC
-│   │   └── enums.py                # Domain enumerations
-│   │
-│   ├── database/
-│   │   ├── base.py                 # SQLAlchemy Base + Mixins
-│   │   ├── connection.py           # Async engine factory
-│   │   └── session.py              # FastAPI session dependency
-│   │
-│   ├── dependencies/
-│   │   ├── auth.py                 # JWT injection, RBAC checker
-│   │   ├── repositories.py         # DB repository factories
-│   │   └── services.py             # Service layer factories
-│   │
-│   ├── exceptions/
-│   │   ├── base.py                 # AppException root class
-│   │   ├── domain.py               # Domain-specific exceptions
-│   │   └── handlers.py             # Global FastAPI error handlers
-│   │
-│   ├── integrations/
-│   │   └── weather/
-│   │       ├── base.py             # IWeatherProvider interface
-│   │       └── open_meteo.py       # Open-Meteo API client
-│   │
-│   ├── logging/
-│   │   └── structured_logger.py    # Structlog JSON setup
-│   │
-│   ├── middleware/
-│   │   ├── request_id.py           # UUID injection per request
-│   │   ├── timing.py               # Latency measurement
-│   │   ├── request_logger.py       # Structured access log
-│   │   ├── security_headers.py     # OWASP security headers
-│   │   └── rate_limiter.py         # Redis sliding window
-│   │
-│   ├── ml/
-│   │   └── inference/
-│   │       ├── base.py             # IModelPredictor interface
-│   │       └── rainfall_model.py   # Rainfall model stub
-│   │
-│   ├── models/                     # SQLAlchemy ORM models
-│   │   ├── __init__.py             # Central model registry
-│   │   ├── user.py
-│   │   ├── auth.py
-│   │   ├── weather.py
-│   │   ├── prediction.py
-│   │   ├── agent.py
-│   │   ├── alert.py
-│   │   ├── digital_twin.py
-│   │   └── report.py
-│   │
-│   ├── monitoring/
-│   │   └── metrics.py              # Prometheus metrics registry
-│   │
-│   ├── repositories/
-│   │   ├── interfaces/             # Abstract data access contracts
-│   │   └── *_impl.py               # SQLAlchemy implementations
-│   │
-│   ├── schemas/                    # Pydantic v2 request/response schemas
-│   │   ├── common.py               # ApiResponse, Pagination
-│   │   ├── auth.py
-│   │   ├── user.py
-│   │   ├── weather.py
-│   │   └── prediction.py
-│   │
-│   ├── security/
-│   │   └── authentication/
-│   │       ├── jwt.py              # Token generation & validation
-│   │       └── passwords.py        # bcrypt hashing
-│   │
-│   ├── services/
-│   │   ├── interfaces/             # Abstract business logic contracts
-│   │   ├── auth_service_impl.py
-│   │   ├── user_service_impl.py
-│   │   ├── weather_service_impl.py
-│   │   └── prediction_service_impl.py
-│   │
-│   ├── tasks/
-│   │   ├── weather_tasks.py        # Celery tasks: weather polling
-│   │   └── agent_tasks.py          # Celery tasks: agent execution
-│   │
-│   ├── telemetry/
-│   │   └── otel.py                 # OpenTelemetry SDK setup
-│   │
-│   ├── workers/
-│   │   └── celery_app.py           # Celery application instance
-│   │
-│   └── main.py                     # FastAPI application factory
-│
-├── alembic/                        # Database migrations
-├── alembic.ini
-├── pyproject.toml                  # Dependencies & project config
-└── .env.example                    # Environment variable template
-```
-
----
-
-## 🔌 API Reference Summary
-
-All endpoints use the `/api/v1/` prefix and return responses in the standard envelope:
-
-```json
-{
-  "success": true,
-  "data": { ... },
-  "message": "OK",
-  "request_id": "uuid",
-  "timestamp": "2025-01-01T00:00:00Z"
-}
-```
-
-### Health
-
-| Method | Path | Auth | Description |
+| Model | Val R² | Test R² | Test RMSE |
 |---|---|---|---|
-| `GET` | `/api/v1/health/live` | None | Kubernetes liveness probe |
-| `GET` | `/api/v1/health/ready` | None | Kubernetes readiness probe (checks DB + Redis) |
-| `GET` | `/api/v1/health` | None | Detailed health report |
+| **LightGBM (log1p target transform)** | 0.194 | **0.216** | **9.27** |
+| Ensemble stacking (RF+XGB+LGBM) | 0.226 | 0.206 | 9.33 |
+| LSTM | 0.367 | 0.147 | 9.70 |
+| GRU | 0.385 | 0.146 | 9.67 |
+| TCN | 0.392 | 0.102 | 9.92 |
+| Two-stage (classifier + regressor) | 0.219 | 0.097 | 9.94 |
+| Ensemble stacking (XGB+LGBM) | 0.235 | 0.068 | 10.10 |
+| LightGBM (Tweedie loss) | 0.258 | 0.041 | 10.25 |
+| TFT-Lite | 0.297 | -0.496 | 12.80 |
 
-### Authentication
-
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `POST` | `/api/v1/auth/login` | None | Login, returns JWT tokens |
-| `POST` | `/api/v1/auth/logout` | Bearer | Revoke active token |
-
-### Users
-
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `GET` | `/api/v1/users/me` | Bearer | Current user profile |
-| `GET` | `/api/v1/users` | Admin | Paginated user list |
-| `POST` | `/api/v1/users` | Admin | Create new user |
-| `PATCH` | `/api/v1/users/{id}` | Admin | Update user |
-| `DELETE` | `/api/v1/users/{id}` | Admin | Soft-delete user |
-
-### Weather
-
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `GET` | `/api/v1/weather/current/{district}` | Bearer | Latest observation |
-| `GET` | `/api/v1/weather/recent/{district}` | Bearer | Recent timeseries |
-| `POST` | `/api/v1/weather/ingest/{district}` | Admin | Force upstream poll |
-
-### Predictions
-
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `POST` | `/api/v1/predictions/run` | Bearer | Run an ML prediction |
+**Key finding:** validation score is consistently a poor predictor of test
+performance across every algorithm family tried — the more flexible the
+model, the better it validates and the worse it generalizes. This traces
+back to a known data quality issue: `imd_rainfall_mm` values are IMD
+**daily** totals flat-filled across ~24 hourly rows, not genuine hourly
+readings, so more expressive models increasingly overfit that artifact
+rather than real rainfall signal. The simplest model (single LightGBM with
+a log1p transform) is currently the most trustworthy result. **Next step:
+re-aggregate the target to its native daily resolution** before further
+model comparison, rather than continuing to search over architectures.
 
 ---
 
-## 🔑 Environment Variables
+# Frontend
 
-Key variables to configure in `.env`:
+A Next.js frontend has been added under `frontend/`, providing the
+visualization/interaction layer on top of the modeling pipeline (dashboards,
+prediction views, etc. — details to be filled in as pages are finalized).
 
-| Variable | Description |
-|---|---|
-| `APP_ENV` | `development` / `staging` / `production` |
-| `SECRET_KEY` | JWT signing secret (min 32 chars) |
-| `POSTGRES_DSN` | `postgresql+asyncpg://user:pass@host/db` |
-| `REDIS_URL` | `redis://localhost:6379/0` |
-| `MINIO_ENDPOINT` | `localhost:9000` |
-| `OTEL_ENABLED` | `true` / `false` |
-| `LOG_LEVEL` | `DEBUG` / `INFO` / `WARNING` |
-| `LOG_FORMAT` | `json` (prod) / `pretty` (dev) |
+```
+frontend/
+├── app/            # Next.js app router pages
+├── components/     # UI components
+├── lib/            # client-side utilities / API helpers
+├── store/          # state management
+├── types/           # shared TypeScript types
+└── public/          # static assets
+```
 
-See [`.env.example`](./backend/.env.example) for the full list.
-
----
-
-## 🚀 Running the Backend Locally
+Run locally:
 
 ```bash
-# Quick start (all-in-one)
-cd backend
-uvicorn app.main:app --reload --port 8000
-
-# With specific log level
-LOG_LEVEL=DEBUG uvicorn app.main:app --reload
-
-# Production mode (no hot reload)
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+cd frontend
+pnpm install
+pnpm dev
 ```
 
 ---
 
-## ⚙️ Running Background Workers
+# Digital Twin Datasets
+
+The project organizes data into thematic layers.
+
+## Climate
+- Open-Meteo
+- ERA5
+- ERA5-Land
+- IMD
+
+## Satellite
+- NASA GPM
+- MODIS NDVI
+
+## Hydrology
+- India WRIS
+
+## Disaster History
+- HPSDMA
+- ReliefWeb
+
+## Population
+- Census
+
+## Infrastructure
+- Roads, Bridges, Schools, Hospitals, Police Stations, Fire Stations,
+  Government Offices, Villages, Bus Stops, Railway Stations, Airports,
+  Power Infrastructure
+
+## Climate Indices
+- ENSO, IOD, SOI, CO₂
+
+---
+
+# Setup
+
+Create a virtual environment
 
 ```bash
-# Single worker with weather + agent queues
-celery -A app.workers.celery_app worker -Q weather,agents --loglevel=info
+python -m venv .venv
+```
 
-# Scheduled task trigger (runs hourly weather polls etc.)
-celery -A app.workers.celery_app beat --loglevel=info
+Activate
 
-# Inspect active tasks
-celery -A app.workers.celery_app inspect active
+Windows
+```powershell
+.venv\Scripts\activate
+```
+
+Linux
+```bash
+source .venv/bin/activate
+```
+
+Install dependencies
+
+```bash
+pip install -r requirements.txt
+pip install torch --index-url https://download.pytorch.org/whl/cpu   # for deep_learning / transformer
+pip install optuna                                                    # for hyperparameter tuning
+```
+
+Frontend
+
+```bash
+cd frontend
+pnpm install
 ```
 
 ---
 
-## 🔄 Development Workflow
+# Configuration
+
+All project settings are controlled through
+
+```
+config/config.yaml
+```
+
+The configuration file contains
+
+- Study Area
+- Districts
+- Bounding Boxes
+- Date Range
+- API Credentials
+- Output Paths
+- Logging
+- Retry Configuration
+- Download Settings
+
+No source code modifications are required when changing the study area or date range.
+
+---
+
+# Running Collectors
+
+Run collectors independently from the project root.
 
 ```bash
-# Run tests
-pytest tests/ -v --cov=app
-
-# Lint
-ruff check app/
-
-# Format
-ruff format app/
-
-# Generate new migration
-alembic revision --autogenerate -m "add_new_field"
-
-# Apply migrations
-alembic upgrade head
-
-# Rollback one migration
-alembic downgrade -1
+python -m collectors.openmeteo_collector
+python -m collectors.imd_collector
+python -m collectors.era5_collector
+python -m collectors.era5_land_collector
+python -m collectors.nasa_collector
+python -m collectors.modis_collector
+python -m collectors.datagov_collector
+python -m collectors.wris_collector
+python -m collectors.census_collector
+python -m collectors.climate_index_collector
+python -m collectors.hpsdma_collector
+python -m collectors.infrastructure_collector
 ```
 
 ---
 
-## ✅ Phase Completion Status
+# Running Machine Learning Models
 
-| Phase | Title | Status |
-|---|---|---|
-| **Phase 0** | Research & Data Engineering | ✅ Complete |
-| **Phase 1** | Backend Architecture & Core Infrastructure | ✅ Complete |
-| **Phase 2** | Database Models & ORM | ✅ Complete |
-| **Phase 3** | Authentication & Security (JWT + bcrypt) | ✅ Complete |
-| **Phase 4** | User Management & RBAC | ✅ Complete |
-| **Phase 5** | Weather Data Pipeline & Ingestion | ✅ Complete |
-| **Phase 6** | Celery Background Workers & Scheduling | ✅ Complete |
-| **Phase 7** | ML Pipeline & Prediction APIs | ✅ Complete |
-| **Phase 8** | Model Registry & Serving | ✅ Complete |
-| **Phase 9** | Agentic AI (12 Autonomous Agents) | ✅ Complete |
-| **Phase 10** | Digital Twin Framework | ✅ Complete |
-| **Phase 11** | Alert & Early Warning System | ✅ Complete |
-| **Phase 12** | Reporting & Notifications | ✅ Complete |
-| **Phase 13** | Testing & QA | ✅ Complete |
-| **Phase 14** | Deployment & Docker Compose | ✅ Complete |
+All commands are run from inside `machine_learning_module/`.
 
----
+```powershell
+cd machine_learning_module
 
-## 👥 Contributing
+# Tree-based / two-stage
+python -m models.machine_learning.lightgbm.train --task-type regression --data-dir ..\ml_ready --target-column imd_rainfall_mm --experiment-name lgbm_v1
+python -m models.machine_learning.xgboost.train --task-type regression --data-dir ..\ml_ready --target-column imd_rainfall_mm --experiment-name xgb_v1
+python -m models.machine_learning.random_forest.train --task-type regression --data-dir ..\ml_ready --target-column imd_rainfall_mm --experiment-name rf_v1
+python -m models.machine_learning.two_stage_rainfall.train --data-dir ..\ml_ready --target-column imd_rainfall_mm --classifier-algorithm xgboost --regressor-algorithm lightgbm --experiment-name two_stage_v1
 
-This project follows **Clean Architecture** with strict SOLID principles:
+# Ensemble
+python -m models.ensemble.train --task-type regression --data-dir ..\ml_ready --target-column imd_rainfall_mm --base-algorithms random_forest,xgboost,lightgbm --ensemble-method stacking --experiment-name ensemble_v1
 
-- Never write business logic in routers.
-- Always define an interface (`I*`) before an implementation.
-- Business logic lives in `services/`, data access in `repositories/`.
-- API contracts are defined in `schemas/`.
+# Deep learning
+python -m models.deep_learning.train --task-type regression --data-dir ..\ml_ready --target-column imd_rainfall_mm --architecture lstm --sequence-length 24 --experiment-name dl_lstm_v1
+
+# Transformer (TFT-Lite)
+python -m models.transformer.train --task-type regression --data-dir ..\ml_ready --target-column imd_rainfall_mm --sequence-length 24 --hidden-size 64 --num-attention-heads 4 --experiment-name tft_lite_v1
+```
+
+Each package follows the same `train.py` / `evaluate.py` / `predict.py` /
+`hyperparameter.py` pattern — see the `README.md` inside each package folder
+under `models/` for full options.
 
 ---
 
-*Built for research in disaster risk reduction and early warning systems — Himachal Pradesh, India.*
+# Data Engineering Features
+
+Each collector provides
+
+- Configuration-driven execution
+- Automatic retry mechanism
+- Resume interrupted downloads
+- Metadata generation
+- Logging
+- Validation
+- Standardized output
+- Progress tracking
+
+---
+
+# Output Structure
+
+Each collector generates
+
+```
+raw/
+cleaned/
+metadata.json
+logs/
+```
+
+where applicable. Metadata includes Source, Collection Time, Variables,
+Spatial Coverage, Temporal Coverage, File Size, Processing Details.
+
+Each ML experiment generates, under `machine_learning_module/artifacts/<algorithm>/<experiment_name>/`:
+
+```
+model.joblib
+val_metrics.json
+test_metrics.json
+training_history.json      (deep_learning / transformer only)
+feature_importance.csv     (tree-based / ensemble only)
+```
+
+---
+
+# Design Principles
+
+- Modular collector architecture
+- One source per collector
+- Configuration-driven design
+- Reproducible data collection and model training
+- Metadata-first workflow
+- Fault-tolerant downloads
+- Independent execution
+- Shared BaseModel/BaseTrainer/BaseEvaluator contract across every ML algorithm
+- Scalable directory hierarchy
+- Research-oriented data management
+
+---
+
+# Current Status
+
+**Current Phase:** Machine Learning Modeling & Frontend Development
+
+Completed
+- Project Architecture
+- Collector Framework
+- Logging System
+- Metadata Framework
+- Configuration Management
+- District Boundary Extraction
+- All Environmental Collectors (Infrastructure & ReliefWeb pending)
+- Preprocessing & Feature Engineering Pipeline (`final_preprocessing.py`)
+- ML Framework (`common/`) — BaseModel, BaseTrainer, BaseEvaluator, ModelRegistry
+- Random Forest, XGBoost, LightGBM, Two-Stage Rainfall models
+- Ensemble module (stacking / voting / weighted_average)
+- Deep Learning module (LSTM / GRU / TCN)
+- Transformer module (TFT-Lite)
+- Model comparison across 9 experiments — identified data quality issue
+  (hourly flat-fill of daily IMD rainfall totals) limiting further ML gains
+- Frontend scaffold (Next.js) initialized
+
+In Progress
+- Daily-resolution re-aggregation of `imd_rainfall_mm` to resolve the
+  flat-fill artifact identified during model comparison
+- Frontend pages/dashboards
+- Infrastructure & ReliefWeb collectors
+
+Pending
+- Agentic AI layer
+- Full Digital Twin integration
+- Decision Support & Early Warning System
+
+---
+
+# Future Roadmap
+
+Phase 1 — Environmental Data Collection ✅
+Phase 2 — Dataset Validation ✅
+Phase 3 — Preprocessing ✅
+Phase 4 — Feature Engineering ✅
+Phase 5 — Master Dataset Generation ✅
+Phase 6 — Machine Learning 🔄 (in progress — data quality fix pending)
+Phase 7 — Deep Learning ✅ (LSTM/GRU/TCN/TFT-Lite implemented)
+Phase 8 — Frontend / Visualization 🔄
+Phase 9 — Agentic AI ⏳
+Phase 10 — Digital Twin ⏳
+Phase 11 — Decision Support & Early Warning System ⏳
+
+---
+
+# Technology Stack
+
+Programming
+- Python
+- TypeScript / JavaScript (frontend)
+
+Geospatial
+- GeoPandas, Rasterio, Shapely, Xarray
+
+Data Processing
+- Pandas, NumPy, PyArrow
+
+Machine Learning
+- Scikit-learn, XGBoost, LightGBM, PyTorch, Optuna
+
+Frontend
+- Next.js, React, pnpm
+
+Networking
+- Requests, BeautifulSoup
+
+Visualization
+- Matplotlib (modeling), frontend dashboard components (product-facing)
+
+---
+
+# License
+
+This repository is developed as part of the Summer Internship Programme at **IIT Mandi** for academic and research purposes.

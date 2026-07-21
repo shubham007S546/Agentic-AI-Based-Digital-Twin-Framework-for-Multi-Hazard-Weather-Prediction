@@ -4,17 +4,15 @@ import { PageHeader } from '@/components/shared/page-header'
 import { GlassCard } from '@/components/shared/glass-card'
 import { ForecastTempChart, ForecastRainChart } from '@/components/charts/extra-charts'
 import { PredictionTimelineChart } from '@/components/charts/charts'
+import { FORECAST_7D } from '@/lib/mock/data'
 import { cn } from '@/lib/utils'
-import { get7DayForecast } from '@/lib/api/weather'
 
 export const metadata: Metadata = {
   title: 'Forecast | VARUNA',
   description: '7-day and 48-hour probabilistic forecasts for Himachal Pradesh.',
 }
 
-export default async function ForecastPage() {
-  const forecast = await get7DayForecast()
-
+export default function ForecastPage() {
   return (
     <div className="p-4 lg:p-6 flex flex-col gap-6">
       <PageHeader
@@ -23,7 +21,7 @@ export default async function ForecastPage() {
       />
 
       <section aria-label="7 day forecast" className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3">
-        {forecast.map((d) => (
+        {FORECAST_7D.map((d) => (
           <GlassCard
             key={d.date}
             className={cn(

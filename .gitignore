@@ -57,25 +57,3 @@ logs/
 # OS files
 Thumbs.db
 .DS_Store
-# Datasets
-ml_ready/*.csv
-datasets/
-data/
-*.parquet
-*.feather
-
-# Models
-*.pkl
-*.joblib
-*.h5
-*.pt
-*.pth
-*.onnx
-
-# Environment
-.venv/
-.env
-
-# Python
-__pycache__/
-*.pyc

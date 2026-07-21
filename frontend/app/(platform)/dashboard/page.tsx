@@ -18,26 +18,16 @@ import { StatCard } from '@/components/shared/stat-card'
 import { GlassCard } from '@/components/shared/glass-card'
 import { RiskBadge } from '@/components/shared/risk-badge'
 import { HourlyRainfallChart, MonthlyRainfallChart } from '@/components/charts/charts'
+import { CURRENT_WEATHER, RIVER_GAUGES, ALERTS, DATASETS, HAZARD_STATIONS } from '@/lib/mock/data'
 import { MiniMapCard } from '@/components/maps/mini-map-card'
-import { getCurrentWeather } from '@/lib/api/weather'
-import { getHazardStations } from '@/lib/api/stations'
-import { getActiveAlerts } from '@/lib/api/alerts'
-import { getRiverGauges } from '@/lib/api/hydrology'
 
 export const metadata: Metadata = {
   title: 'Dashboard | Digital Twin',
   description: 'Live situational overview: weather, hazards, hydrology and AI status.',
 }
 
-export default async function DashboardPage() {
-  const [weather, stations, alerts, gauges] = await Promise.all([
-    getCurrentWeather(),
-    getHazardStations(),
-    getActiveAlerts(4),
-    getRiverGauges(),
-  ])
-
-  const severeCount = stations.filter((s) => s.risk === 'severe' || s.risk === 'high').length
+export default function DashboardPage() {
+  const severeCount = HAZARD_STATIONS.filter((s) => s.risk === 'severe' || s.risk === 'high').length
 
   return (
     <div className="p-4 lg:p-6 flex flex-col gap-6">
@@ -50,11 +40,11 @@ export default async function DashboardPage() {
         aria-label="Key metrics"
         className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3"
       >
-        <StatCard label="Rainfall (1h)" value={weather.rainfall} unit="mm" icon={CloudRain} sub="GPM + station fused" />
-        <StatCard label="Temperature" value={weather.temperature} unit="°C" icon={Thermometer} sub={weather.condition} />
-        <StatCard label="Humidity" value={weather.humidity} unit="%" icon={Droplets} sub={`Dew point ${weather.dewPoint}°C`} />
-        <StatCard label="Pressure" value={weather.pressure} unit="hPa" icon={Gauge} sub="Falling 2.1 hPa / 3h" tone="warning" />
-        <StatCard label="Wind" value={weather.windSpeed} unit="km/h" icon={Wind} sub={`Direction ${weather.windDirection}`} />
+        <StatCard label="Rainfall (1h)" value={CURRENT_WEATHER.rainfall} unit="mm" icon={CloudRain} sub="GPM + station fused" />
+        <StatCard label="Temperature" value={CURRENT_WEATHER.temperature} unit="°C" icon={Thermometer} sub={CURRENT_WEATHER.condition} />
+        <StatCard label="Humidity" value={CURRENT_WEATHER.humidity} unit="%" icon={Droplets} sub={`Dew point ${CURRENT_WEATHER.dewPoint}°C`} />
+        <StatCard label="Pressure" value={CURRENT_WEATHER.pressure} unit="hPa" icon={Gauge} sub="Falling 2.1 hPa / 3h" tone="warning" />
+        <StatCard label="Wind" value={CURRENT_WEATHER.windSpeed} unit="km/h" icon={Wind} sub={`Direction ${CURRENT_WEATHER.windDirection}`} />
         <StatCard label="Cloudburst Risk" value="91" unit="%" icon={CloudLightning} sub="Upper Beas basin" tone="danger" />
       </section>
 
@@ -74,7 +64,7 @@ export default async function DashboardPage() {
         <GlassCard className="p-5">
           <h2 className="text-sm font-medium mb-3">River Levels</h2>
           <ul className="flex flex-col gap-3">
-            {gauges.map((g) => {
+            {RIVER_GAUGES.map((g) => {
               const pct = Math.min(100, Math.round((g.level / g.dangerLevel) * 100))
               return (
                 <li key={g.id}>
@@ -101,7 +91,7 @@ export default async function DashboardPage() {
         <GlassCard className="p-5">
           <h2 className="text-sm font-medium mb-3">Active Alerts</h2>
           <ul className="flex flex-col gap-3">
-            {alerts.map((a) => (
+            {ALERTS.map((a) => (
               <li key={a.id} className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-sm truncate">{a.title}</p>
@@ -126,7 +116,7 @@ export default async function DashboardPage() {
             </li>
             <li className="flex items-center justify-between">
               <span className="flex items-center gap-2 text-muted-foreground"><Database className="size-4 text-primary" aria-hidden="true" />Data sources online</span>
-              <span className="tabular-nums text-xs font-medium">8 / 8</span>
+              <span className="tabular-nums text-xs font-medium">{DATASETS.length} / {DATASETS.length}</span>
             </li>
             <li className="flex items-center justify-between">
               <span className="flex items-center gap-2 text-muted-foreground"><Leaf className="size-4 text-primary" aria-hidden="true" />Regional NDVI</span>
