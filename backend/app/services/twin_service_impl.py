@@ -102,19 +102,49 @@ class TwinServiceImpl(ITwinService):
         await self.twin_repo.update_simulation(simulation)
 
         try:
-            # --- Stub for actual ML / physics simulation engine ---
-            logger.info("Executing simulation", simulation_id=str(simulation.id))
-            await asyncio.sleep(2)  # Simulate compute time
+            logger.info("Executing simulation via ML engines", simulation_id=str(simulation.id))
             
             # Extract scenario parameters
-            params = simulation.scenario_parameters
-            precip_multiplier = params.get("precipitation_multiplier", 1.0)
-            
-            # Dummy logic: heavy rain = flood risk
+            params = simulation.scenario_parameters or {}
+            precip_mult = float(params.get("precipitation_multiplier", 1.0))
+            temp_delta = float(params.get("temperature_delta", 0.0))
+
+            from app.ml.inference.rainfall_model import RainfallPredictor
+            from app.ml.inference.landslide_model import LandslidePredictor, FloodPredictor, CloudburstPredictor
+
+            rf_predictor = RainfallPredictor()
+            ls_predictor = LandslidePredictor()
+            fl_predictor = FloodPredictor()
+            cb_predictor = CloudburstPredictor()
+
+            await rf_predictor.load()
+            await ls_predictor.load()
+            await fl_predictor.load()
+
+            sim_features = {
+                "temperature_2m": 22.0 + temp_delta,
+                "relative_humidity_2m": min(100.0, 70.0 * precip_mult),
+                "cloud_cover": min(100.0, 60.0 * precip_mult),
+                "precipitation": 15.0 * precip_mult,
+                "rolling_precip_72h": 45.0 * precip_mult,
+                "soil_moisture": min(1.0, 0.45 * precip_mult),
+                "slope_degrees": 32.0,
+            }
+
+            rf_res = await rf_predictor.predict(sim_features)
+            ls_res = await ls_predictor.predict(sim_features)
+            fl_res = await fl_predictor.predict(sim_features)
+            cb_res = await cb_predictor.predict(sim_features)
+
             results = {
-                "projected_river_level_m": 2.5 + (1.5 * precip_multiplier),
-                "landslide_probability": min(1.0, 0.2 * precip_multiplier),
-                "infrastructure_impact": "SEVERE" if precip_multiplier >= 3.0 else "NOMINAL",
+                "projected_rainfall_mm": rf_res["precipitation_mm"],
+                "projected_river_level_m": round(2.1 + (fl_res["flood_risk_index"] * 3.5), 2),
+                "landslide_probability": ls_res["risk_score"],
+                "landslide_risk_level": ls_res["risk_level"],
+                "cloudburst_probability": cb_res["cloudburst_probability"],
+                "flood_risk_index": fl_res["flood_risk_index"],
+                "infrastructure_impact": "CRITICAL" if ls_res["risk_score"] > 0.7 or fl_res["flood_risk_index"] > 0.7 else "MODERATE" if precip_mult > 1.5 else "NOMINAL",
+                "model_ensemble": ["XGBoost_Rainfall", "Geotech_Landslide", "Catchment_Flood"]
             }
             
             simulation.simulation_results = results

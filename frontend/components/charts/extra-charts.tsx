@@ -33,10 +33,10 @@ const C2 = 'oklch(0.75 0.15 160)'
 const C3 = 'oklch(0.8 0.15 80)'
 const C4 = 'oklch(0.64 0.2 25)'
 
-export function ForecastTempChart() {
+export function ForecastTempChart({ data = FORECAST_7D }: { data?: typeof FORECAST_7D }) {
   return (
     <ResponsiveContainer width="100%" height={260}>
-      <LineChart data={FORECAST_7D} margin={{ top: 8, right: 8, left: -22, bottom: 0 }}>
+      <LineChart data={data} margin={{ top: 8, right: 8, left: -22, bottom: 0 }}>
         <CartesianGrid stroke={GRID} vertical={false} />
         <XAxis dataKey="day" tick={AXIS} tickLine={false} axisLine={false} />
         <YAxis tick={AXIS} tickLine={false} axisLine={false} unit="°" />
@@ -49,16 +49,16 @@ export function ForecastTempChart() {
   )
 }
 
-export function ForecastRainChart() {
+export function ForecastRainChart({ data = FORECAST_7D }: { data?: typeof FORECAST_7D }) {
   return (
     <ResponsiveContainer width="100%" height={260}>
-      <BarChart data={FORECAST_7D} margin={{ top: 8, right: 8, left: -14, bottom: 0 }}>
+      <BarChart data={data} margin={{ top: 8, right: 8, left: -14, bottom: 0 }}>
         <CartesianGrid stroke={GRID} vertical={false} />
         <XAxis dataKey="day" tick={AXIS} tickLine={false} axisLine={false} />
         <YAxis tick={AXIS} tickLine={false} axisLine={false} unit="mm" />
         <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'oklch(1 0 0 / 5%)' }} />
         <Bar dataKey="rainfall" name="Rainfall" radius={[4, 4, 0, 0]}>
-          {FORECAST_7D.map((d) => (
+          {data.map((d) => (
             <Cell key={d.date} fill={d.rainfall > 30 ? C4 : d.rainfall > 15 ? C3 : C1} />
           ))}
         </Bar>

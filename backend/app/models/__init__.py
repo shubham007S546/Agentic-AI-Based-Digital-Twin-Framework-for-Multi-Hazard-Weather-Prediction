@@ -11,6 +11,7 @@ here, Alembic will think the table was deleted and create a drop table migration
 from app.database.base import Base
 
 # Domain models
+from app.models.access_request import AccessRequest
 from app.models.agent import AgentExecution
 from app.models.alert import Alert, AlertNotification
 from app.models.auth import BlacklistedToken, EmailVerificationToken, PasswordResetToken, RefreshToken
@@ -23,6 +24,7 @@ from app.models.weather import WeatherObservation
 # Expose everything to external modules
 __all__ = [
     "Base",
+    "AccessRequest",
     "AgentExecution",
     "Alert",
     "AlertNotification",

@@ -7,7 +7,10 @@ FastAPI dependencies for injecting services.
 from typing import Annotated
 
 from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 from redis.asyncio import Redis
+
+from app.database.session import get_async_db
 
 from app.cache.redis_client import get_cache_client
 from app.dependencies.repositories import (
@@ -20,7 +23,7 @@ from app.dependencies.repositories import (
 )
 from app.repositories.interfaces.user_repo import IUserRepository
 from app.repositories.interfaces.weather_repo import IWeatherRepository
-from app.services.auth_service_impl import AuthServiceImpl
+from app.services.auth_service import AuthService
 from app.services.interfaces.auth_service import IAuthService
 from app.services.interfaces.user_service import IUserService
 from app.services.user_service_impl import UserServiceImpl
@@ -48,11 +51,11 @@ from app.services.report_service_impl import ReportServiceImpl
 
 
 def get_auth_service(
-    user_repo: Annotated[IUserRepository, Depends(get_user_repository)],
+    db: Annotated[AsyncSession, Depends(get_async_db)],
     redis: Annotated[Redis, Depends(get_cache_client)],
 ) -> IAuthService:
     """Provides the Authentication Service."""
-    return AuthServiceImpl(user_repo=user_repo, redis=redis)
+    return AuthService(db=db, redis=redis)
 
 
 def get_user_service(

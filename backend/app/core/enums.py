@@ -12,7 +12,10 @@ Design decisions:
 
 from __future__ import annotations
 
-from enum import IntEnum, StrEnum, auto
+from enum import Enum, IntEnum, auto
+
+class StrEnum(str, Enum):
+    pass
 
 
 # ── Application Environment ───────────────────────────────────────────────────
@@ -25,6 +28,11 @@ class Environment(StrEnum):
 
 
 # ── User & Authentication ─────────────────────────────────────────────────────
+
+class AccessRequestStatus(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
 
 class UserRole(StrEnum):
     """

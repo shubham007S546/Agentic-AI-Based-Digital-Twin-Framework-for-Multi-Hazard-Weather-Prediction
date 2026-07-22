@@ -14,7 +14,7 @@ from app.core.constants import TOKEN_BLACKLIST_PREFIX
 from app.exceptions.domain import AuthenticationError, AccountLockedError
 from app.repositories.interfaces.user_repo import IUserRepository
 from app.schemas.auth import LoginRequest, RefreshRequest, Token
-from app.security.authentication.jwt import create_access_token
+from app.security.authentication.jwt import create_access_token, create_refresh_token
 from app.security.authentication.passwords import verify_password
 from app.services.interfaces.auth_service import IAuthService
 
@@ -27,11 +27,10 @@ class AuthServiceImpl(IAuthService):
 
     async def login(self, request: LoginRequest, client_ip: str) -> Token:
         user = await self.user_repo.get_by_email(request.email)
-        if not user:
+        if not user or not user.is_active:
             raise AuthenticationError()
 
-        # Brute force protection logic here...
-        if user.locked_until and user.locked_until > datetime.now(UTC):
+        if user.is_locked:
             raise AccountLockedError()
 
         if not verify_password(request.password, user.hashed_password):
@@ -49,8 +48,7 @@ class AuthServiceImpl(IAuthService):
 
         # Generate tokens
         access_token = create_access_token(user.id, role=user.role.name)
-        # Note: In a complete implementation, we'd also generate/store a RefreshToken in DB here
-        refresh_token = "dummy-refresh-token-for-now"
+        refresh_token = create_refresh_token(user.id, role=user.role.name)
         
         return Token(
             access_token=access_token,

@@ -13,7 +13,7 @@ Design decisions:
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import timezone, datetime, timedelta
 from typing import Any
 
 import jwt
@@ -37,7 +37,7 @@ def create_access_token(
     """
     settings = get_settings()
     
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)
     if expires_delta:
         expire = now + expires_delta
     else:
@@ -60,6 +60,34 @@ def create_access_token(
     )
     
     return encoded_jwt
+
+
+def create_refresh_token(
+    subject: str | uuid.UUID,
+    role: str,
+    expires_delta: timedelta | None = None
+) -> str:
+    """Create a long-lived JWT refresh token."""
+    settings = get_settings()
+    now = datetime.now(timezone.utc)
+    if expires_delta:
+        expire = now + expires_delta
+    else:
+        expire = now + timedelta(days=7)
+    jti = str(uuid.uuid4())
+    to_encode: dict[str, Any] = {
+        "sub": str(subject),
+        "role": role,
+        "type": "refresh",
+        "exp": expire,
+        "iat": now,
+        "jti": jti,
+    }
+    return jwt.encode(
+        to_encode, 
+        settings.jwt.secret_key.get_secret_value(), 
+        algorithm=settings.jwt.algorithm
+    )
 
 
 def decode_access_token(token: str) -> dict[str, Any]:

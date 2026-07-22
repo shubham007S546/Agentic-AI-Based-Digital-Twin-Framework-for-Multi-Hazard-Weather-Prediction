@@ -75,7 +75,7 @@ class ResearchAgent(BaseAgent):
         self._logger.info(
             "Starting research data export",
             districts=target_districts,
-            date_range=f"{date_from} → {date_to}",
+            date_range=f"{date_from} to {date_to}",
             format=export_format,
             indices=indices,
         )

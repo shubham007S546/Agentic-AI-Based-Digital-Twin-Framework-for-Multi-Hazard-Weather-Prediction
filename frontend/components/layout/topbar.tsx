@@ -7,14 +7,27 @@ import { Bell, Menu, Search, X, Radar } from 'lucide-react'
 import { NAV_SECTIONS, PLATFORM_NAME } from '@/lib/constants/navigation'
 import { ALERTS } from '@/lib/mock/data'
 import { RiskBadge } from '@/components/shared/risk-badge'
+import { useAuth } from '@/hooks/use-auth'
 import { cn } from '@/lib/utils'
 
 export function Topbar() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [alertsOpen, setAlertsOpen] = useState(false)
   const pathname = usePathname()
-
+  const { user } = useAuth()
   const current = NAV_SECTIONS.flatMap((s) => s.items).find((i) => i.href === pathname)
+
+  const getInitials = (name?: string) => {
+    if (!name) return 'U'
+    return name
+      .split(' ')
+      .map((n) => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2)
+  }
+
+  const initials = user ? getInitials(user.full_name) : 'U'
 
   return (
     <header className="sticky top-0 z-40 glass-strong border-b border-border h-14 flex items-center gap-3 px-4">
@@ -84,11 +97,11 @@ export function Topbar() {
         </div>
 
         <Link
-          href="/auth"
+          href="/profile"
           className="flex size-9 items-center justify-center rounded-lg bg-primary/15 border border-primary/25 text-primary text-xs font-semibold"
           aria-label="Account"
         >
-          RS
+          {initials}
         </Link>
       </div>
 

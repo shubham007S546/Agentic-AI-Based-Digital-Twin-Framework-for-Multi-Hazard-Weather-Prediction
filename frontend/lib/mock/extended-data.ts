@@ -262,7 +262,7 @@ export interface PlatformUser {
 }
 
 export const PLATFORM_USERS: PlatformUser[] = [
-  { id: 'u-1', name: 'Dr. Rajat Sharma', email: 'rajat@iitmandi.ac.in', role: 'Admin', org: 'IIT Mandi', lastActive: '2 min ago', status: 'active' },
+  { id: 'u-1', name: 'Platform Administrator', email: 'admin@example.com', role: 'Admin', org: 'IIT Mandi', lastActive: '2 min ago', status: 'active' },
   { id: 'u-2', name: 'Ananya Verma', email: 'ananya@iitmandi.ac.in', role: 'Researcher', org: 'IIT Mandi', lastActive: '14 min ago', status: 'active' },
   { id: 'u-3', name: 'Vikram Negi', email: 'vikram.negi@hp.gov.in', role: 'District Officer', org: 'DDMA Kullu', lastActive: '1 h ago', status: 'active' },
   { id: 'u-4', name: 'Priya Thakur', email: 'priya.thakur@hp.gov.in', role: 'District Officer', org: 'DDMA Mandi', lastActive: '3 h ago', status: 'active' },

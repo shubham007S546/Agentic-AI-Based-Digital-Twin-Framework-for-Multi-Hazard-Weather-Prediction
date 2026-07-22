@@ -21,6 +21,9 @@ Used by:
 from __future__ import annotations
 
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -232,7 +235,7 @@ class WeatherSourceSettings(BaseSettings):
 
     open_meteo_base_url: str = Field("https://archive-api.open-meteo.com/v1/archive")
     open_meteo_forecast_url: str = Field("https://api.open-meteo.com/v1/forecast")
-    openweather_api_key: str = Field("886cd33323a4600331a38bd829e16c5f")
+    openweather_api_key: str = Field("")
     openweather_base_url: str = Field("https://api.openweathermap.org/data/2.5")
     nasa_earthdata_username: str = Field("")
     nasa_earthdata_password: SecretStr = Field(SecretStr(""))

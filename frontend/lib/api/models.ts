@@ -8,7 +8,7 @@ import { MODEL_METRICS } from '@/lib/mock/data'
 export interface ModelMetricItem {
   name: string
   category: 'ml' | 'dl' | 'transformer'
-  family: string
+  family?: string
   mae: number
   rmse: number
   r2: number

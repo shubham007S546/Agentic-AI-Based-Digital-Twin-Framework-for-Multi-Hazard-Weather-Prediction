@@ -97,7 +97,7 @@ def load_temporal_cv_splits(ml_ready: Path, n_splits: int = 5) -> list[tuple[np.
 
 def _feature_cols_from_master(master: pd.DataFrame) -> list[str]:
     exclude = {
-        "datetime", "imd_rainfall_mm", "rain_intensity_class", "cloudburst_flag",
+        "datetime", "imd_rainfall_mm", "imd_rainfall_mm_log1p", "rain_intensity_class", "cloudburst_flag",
         "landslide_risk", "sw_rain_intensity_class", "sw_cloudburst_flag",
         "sw_landslide_risk", "cv_fold",
     }

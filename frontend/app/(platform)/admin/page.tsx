@@ -14,11 +14,11 @@ export const metadata: Metadata = {
 }
 
 const AUDIT_LOG = [
-  { time: '07:12 IST', actor: 'rajat@iitmandi.ac.in', action: 'Approved alert AL-1 for public dispatch' },
+  { time: '07:12 IST', actor: 'admin@example.com', action: 'Approved alert AL-1 for public dispatch' },
   { time: '06:58 IST', actor: 'system', action: 'XGBoost champion model promoted to serving (v2026.07.14)' },
   { time: '06:40 IST', actor: 'model-agent', action: 'Cloudburst watch raised for Kullu (p=0.91)' },
-  { time: 'Yesterday', actor: 'ananya@iitmandi.ac.in', action: 'Updated flood threshold for Pandoh gauge (9.8m → 10.2m)' },
-  { time: 'Yesterday', actor: 'rajat@iitmandi.ac.in', action: 'Invited rohit.c@hpsdma.nic.in as Viewer' },
+  { time: 'Yesterday', actor: 'researcher@example.com', action: 'Updated flood threshold for Pandoh gauge (9.8m → 10.2m)' },
+  { time: 'Yesterday', actor: 'admin@example.com', action: 'Invited officer@example.com as Viewer' },
   { time: '13 Jul', actor: 'system', action: 'Master dataset v14 published; 3 experiments migrated' },
 ]
 

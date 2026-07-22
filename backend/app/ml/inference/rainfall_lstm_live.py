@@ -58,6 +58,8 @@ DISTRICT_COORDINATES = {
     "Mandi": {"lat": 31.5892, "lon": 76.9182},
     "Kullu": {"lat": 31.9578, "lon": 77.1095},
     "Chamba": {"lat": 32.5534, "lon": 76.1258},
+    "Shimla": {"lat": 31.1048, "lon": 77.1734},
+    "Kangra": {"lat": 32.0998, "lon": 76.2691},
 }
 
 FEATURE_COLS = [

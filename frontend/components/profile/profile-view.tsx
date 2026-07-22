@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { BadgeCheck, Building2, Mail, MapPin, ShieldCheck, Smartphone } from 'lucide-react'
 import { GlassCard } from '@/components/shared/glass-card'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/hooks/use-auth'
 
 const RECENT_ACTIVITY = [
   { time: '07:12 IST', action: 'Approved alert AL-1 for public dispatch' },
@@ -17,11 +18,18 @@ const RECENT_ACTIVITY = [
 const DISTRICT_SUBSCRIPTIONS = ['Mandi', 'Kullu', 'Kangra', 'Shimla', 'Chamba']
 
 export function ProfileView() {
+  const { user } = useAuth()
   const [editing, setEditing] = useState(false)
-  const [name, setName] = useState('Dr. Rajat Sharma')
+  const [name, setName] = useState(user?.full_name || 'User')
   const [phone, setPhone] = useState('+91 98160 00000')
   const [districts, setDistricts] = useState<string[]>(['Mandi', 'Kullu', 'Kangra'])
   const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    if (user) {
+      setName(user.full_name)
+    }
+  }, [user])
 
   function toggleDistrict(d: string) {
     setDistricts((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]))
@@ -41,7 +49,7 @@ export function ProfileView() {
             className="flex size-14 shrink-0 items-center justify-center rounded-full bg-primary/15 border border-primary/25 text-primary text-lg font-semibold"
             aria-hidden="true"
           >
-            RS
+            {name ? name.split(' ').map((x) => x[0]).join('').toUpperCase().slice(0, 2) : 'U'}
           </span>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
@@ -50,7 +58,7 @@ export function ProfileView() {
             </div>
             <span className="inline-flex items-center gap-1 mt-1 rounded-full bg-primary/15 border border-primary/30 px-2 py-0.5 text-[10px] font-medium text-primary">
               <ShieldCheck className="size-3" aria-hidden="true" />
-              Admin
+              {user ? user.role : 'Member'}
             </span>
           </div>
         </div>
@@ -59,7 +67,7 @@ export function ProfileView() {
           <div className="flex items-center gap-2.5">
             <Mail className="size-4 text-muted-foreground shrink-0" aria-hidden="true" />
             <dt className="sr-only">Email</dt>
-            <dd className="font-mono truncate">rajat@iitmandi.ac.in</dd>
+            <dd className="font-mono truncate">{user ? user.email : 'user@example.com'}</dd>
           </div>
           <div className="flex items-center gap-2.5">
             <Smartphone className="size-4 text-muted-foreground shrink-0" aria-hidden="true" />
@@ -80,7 +88,11 @@ export function ProfileView() {
           <div className="flex items-center gap-2.5">
             <Building2 className="size-4 text-muted-foreground shrink-0" aria-hidden="true" />
             <dt className="sr-only">Organisation</dt>
-            <dd>IIT Mandi · Centre for AI &amp; Disaster Research</dd>
+            <dd>
+              {user?.organization
+                ? `${user.organization}${user.department ? ` · ${user.department}` : ''}`
+                : 'IIT Mandi · Centre for AI & Disaster Research'}
+            </dd>
           </div>
           <div className="flex items-center gap-2.5">
             <MapPin className="size-4 text-muted-foreground shrink-0" aria-hidden="true" />
