@@ -1,8 +1,9 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { GlassCard } from '@/components/shared/glass-card'
 import { ModelCompareChart } from '@/components/charts/charts'
+import { getModelBenchmark, ModelMetricItem } from '@/lib/api/models'
 import { MODEL_METRICS } from '@/lib/mock/data'
 import { cn } from '@/lib/utils'
 
@@ -29,13 +30,37 @@ const STATUS_STYLES: Record<string, string> = {
   planned: 'bg-secondary text-muted-foreground border-border',
 }
 
-export function ModelComparisonExplorer() {
+export function ModelComparisonExplorer({
+  initialModels,
+  champion: initialChampion,
+}: {
+  initialModels?: ModelMetricItem[]
+  champion?: string
+}) {
+  const [modelsList, setModelsList] = useState<ModelMetricItem[]>(
+    initialModels ?? (MODEL_METRICS as ModelMetricItem[]),
+  )
+  const [championName, setChampionName] = useState<string>(initialChampion ?? 'XGBoost')
   const [metric, setMetric] = useState<MetricKey>('mae')
   const [category, setCategory] = useState<CategoryKey>('all')
 
+  useEffect(() => {
+    let unmounted = false
+    getModelBenchmark()
+      .then((res) => {
+        if (unmounted || !res?.models?.length) return
+        setModelsList(res.models)
+        if (res.champion) setChampionName(res.champion)
+      })
+      .catch(() => {})
+    return () => {
+      unmounted = true
+    }
+  }, [])
+
   const filtered = useMemo(
-    () => MODEL_METRICS.filter((m) => category === 'all' || m.category === category),
-    [category],
+    () => modelsList.filter((m) => category === 'all' || m.category === category),
+    [modelsList, category],
   )
 
   const chartData = useMemo(
@@ -95,7 +120,7 @@ export function ModelComparisonExplorer() {
         <div className="p-5 pb-3">
           <h2 className="text-sm font-medium">Full Metric Matrix</h2>
           <p className="text-xs text-muted-foreground mt-1">
-            {filtered.length} models · validation window Jun–Jul 2026 · rainfall regression + hazard classification
+            {filtered.length} models · dynamically evaluated from model artifacts · rainfall regression + hazard classification
           </p>
         </div>
         <div className="overflow-x-auto">
@@ -115,36 +140,39 @@ export function ModelComparisonExplorer() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((m) => (
-                <tr key={m.name} className="border-b border-border/50 hover:bg-secondary/40 transition-colors">
-                  <td className="px-5 py-2.5 font-medium whitespace-nowrap">
-                    {m.name}
-                    {m.name === 'XGBoost' && (
-                      <span className="ml-2 rounded-full bg-primary/15 text-primary border border-primary/30 px-1.5 py-0.5 text-[10px]">
-                        champion
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2.5 text-muted-foreground uppercase">{m.category}</td>
-                  <td className="px-3 py-2.5 text-right font-mono tabular-nums">{m.mae.toFixed(2)}</td>
-                  <td className="px-3 py-2.5 text-right font-mono tabular-nums">{m.rmse.toFixed(2)}</td>
-                  <td className="px-3 py-2.5 text-right font-mono tabular-nums">{m.r2.toFixed(2)}</td>
-                  <td className="px-3 py-2.5 text-right font-mono tabular-nums">{m.f1.toFixed(2)}</td>
-                  <td className="px-3 py-2.5 text-right font-mono tabular-nums">{m.mcc.toFixed(2)}</td>
-                  <td className="px-3 py-2.5 text-right font-mono tabular-nums">{m.inferenceMs.toFixed(1)}</td>
-                  <td className="px-3 py-2.5 text-right font-mono tabular-nums">{m.params}</td>
-                  <td className="px-5 py-2.5">
-                    <span
-                      className={cn(
-                        'inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium capitalize',
-                        STATUS_STYLES[m.status],
+              {filtered.map((m) => {
+                const isChampion = m.is_champion || m.name === championName
+                return (
+                  <tr key={m.name} className="border-b border-border/50 hover:bg-secondary/40 transition-colors">
+                    <td className="px-5 py-2.5 font-medium whitespace-nowrap">
+                      {m.name}
+                      {isChampion && (
+                        <span className="ml-2 rounded-full bg-primary/15 text-primary border border-primary/30 px-1.5 py-0.5 text-[10px]">
+                          champion
+                        </span>
                       )}
-                    >
-                      {m.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="px-3 py-2.5 text-muted-foreground uppercase">{m.category}</td>
+                    <td className="px-3 py-2.5 text-right font-mono tabular-nums">{m.mae.toFixed(3)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono tabular-nums">{m.rmse.toFixed(3)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono tabular-nums">{m.r2.toFixed(2)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono tabular-nums">{m.f1.toFixed(2)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono tabular-nums">{m.mcc.toFixed(2)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono tabular-nums">{m.inferenceMs.toFixed(1)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono tabular-nums">{m.params}</td>
+                    <td className="px-5 py-2.5">
+                      <span
+                        className={cn(
+                          'inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium capitalize',
+                          STATUS_STYLES[m.status] || STATUS_STYLES.trained,
+                        )}
+                      >
+                        {m.status}
+                      </span>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>

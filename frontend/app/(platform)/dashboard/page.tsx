@@ -18,15 +18,25 @@ import { StatCard } from '@/components/shared/stat-card'
 import { GlassCard } from '@/components/shared/glass-card'
 import { RiskBadge } from '@/components/shared/risk-badge'
 import { HourlyRainfallChart, MonthlyRainfallChart } from '@/components/charts/charts'
-import { CURRENT_WEATHER, RIVER_GAUGES, ALERTS, DATASETS, HAZARD_STATIONS } from '@/lib/mock/data'
+import { ALERTS, DATASETS, HAZARD_STATIONS } from '@/lib/mock/data'
 import { MiniMapCard } from '@/components/maps/mini-map-card'
+import { getCurrentWeather } from '@/lib/api/weather'
+import { getRiverGauges } from '@/lib/api/hydrology'
+import { getCloudburstPredictions } from '@/lib/api/predictions'
 
 export const metadata: Metadata = {
   title: 'Dashboard | Digital Twin',
   description: 'Live situational overview: weather, hazards, hydrology and AI status.',
 }
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const [weather, gauges, cloudburstPreds] = await Promise.all([
+    getCurrentWeather(),
+    getRiverGauges(),
+    getCloudburstPredictions(),
+  ])
+
+  const topCloudburst = cloudburstPreds.sort((a, b) => b.probability - a.probability)[0]
   const severeCount = HAZARD_STATIONS.filter((s) => s.risk === 'severe' || s.risk === 'high').length
 
   return (
@@ -40,19 +50,26 @@ export default function DashboardPage() {
         aria-label="Key metrics"
         className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3"
       >
-        <StatCard label="Rainfall (1h)" value={CURRENT_WEATHER.rainfall} unit="mm" icon={CloudRain} sub="GPM + station fused" />
-        <StatCard label="Temperature" value={CURRENT_WEATHER.temperature} unit="°C" icon={Thermometer} sub={CURRENT_WEATHER.condition} />
-        <StatCard label="Humidity" value={CURRENT_WEATHER.humidity} unit="%" icon={Droplets} sub={`Dew point ${CURRENT_WEATHER.dewPoint}°C`} />
-        <StatCard label="Pressure" value={CURRENT_WEATHER.pressure} unit="hPa" icon={Gauge} sub="Falling 2.1 hPa / 3h" tone="warning" />
-        <StatCard label="Wind" value={CURRENT_WEATHER.windSpeed} unit="km/h" icon={Wind} sub={`Direction ${CURRENT_WEATHER.windDirection}`} />
-        <StatCard label="Cloudburst Risk" value="91" unit="%" icon={CloudLightning} sub="Upper Beas basin" tone="danger" />
+        <StatCard label="Rainfall (1h)" value={weather.rainfall} unit="mm" icon={CloudRain} sub="OpenWeather live" />
+        <StatCard label="Temperature" value={weather.temperature} unit="°C" icon={Thermometer} sub={weather.condition} />
+        <StatCard label="Humidity" value={weather.humidity} unit="%" icon={Droplets} sub={`Dew point ${weather.dewPoint}°C`} />
+        <StatCard label="Pressure" value={weather.pressure} unit="hPa" icon={Gauge} sub="Live Barometer" tone="warning" />
+        <StatCard label="Wind" value={weather.windSpeed} unit="km/h" icon={Wind} sub={`Direction ${weather.windDirection}`} />
+        <StatCard
+          label="Cloudburst Risk"
+          value={topCloudburst?.probability ?? 91}
+          unit="%"
+          icon={CloudLightning}
+          sub={`${topCloudburst?.district ?? 'Mandi'} district`}
+          tone="danger"
+        />
       </section>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <GlassCard className="p-5 xl:col-span-2">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-medium">Rainfall — Observed vs Predicted (24h)</h2>
-            <span className="text-[10px] font-mono text-muted-foreground">GPM · ERA5 · XGBoost</span>
+            <span className="text-[10px] font-mono text-muted-foreground">OpenWeather · ERA5 · LSTM/LightGBM</span>
           </div>
           <HourlyRainfallChart />
         </GlassCard>
@@ -64,7 +81,7 @@ export default function DashboardPage() {
         <GlassCard className="p-5">
           <h2 className="text-sm font-medium mb-3">River Levels</h2>
           <ul className="flex flex-col gap-3">
-            {RIVER_GAUGES.map((g) => {
+            {gauges.map((g) => {
               const pct = Math.min(100, Math.round((g.level / g.dangerLevel) * 100))
               return (
                 <li key={g.id}>

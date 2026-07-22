@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { CloudLightning, Zap, Timer, MapPin, CloudRain } from 'lucide-react'
+import { CloudLightning, Zap, Timer, MapPin } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import { StatCard } from '@/components/shared/stat-card'
 import { GlassCard } from '@/components/shared/glass-card'
@@ -7,6 +7,7 @@ import { RiskBadge } from '@/components/shared/risk-badge'
 import { ProbabilityGauge, GenericAreaChart } from '@/components/charts/extra-charts'
 import { HAZARD_STATIONS, ALERTS } from '@/lib/mock/data'
 import { getCloudburstPredictions } from '@/lib/api/predictions'
+import { LiveDistrictRisk } from '@/components/predictions/live-district-risk'
 
 export const metadata: Metadata = {
   title: 'Cloudburst Prediction | VARUNA',
@@ -32,8 +33,6 @@ const BASINS = [
 ]
 
 export default async function CloudburstPage() {
-  // Real, live prediction from the trained LSTM model (falls back to mock
-  // automatically if the backend is unreachable -- see fetchWithFallback).
   const predictions = await getCloudburstPredictions()
   const cloudburstAlert = ALERTS.find((a) => a.type === 'Cloudburst')
   const topDistrict = [...predictions].sort((a, b) => b.probability - a.probability)[0]
@@ -65,39 +64,7 @@ export default async function CloudburstPage() {
         <StatCard label="Cells Tracked" value="7" icon={MapPin} sub="3 intensifying" tone="warning" />
       </section>
 
-      {/* ── LIVE: real LSTM model predictions per district ───────────── */}
-      <GlassCard className="p-5">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-medium">District Cloudburst Risk — Live</h2>
-          <span className="text-[10px] font-mono text-muted-foreground">model: lstm_v1</span>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {predictions.map((p) => (
-            <div key={p.district} className="rounded-lg border border-border/50 p-4 flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-sm">{p.district}</span>
-                <RiskBadge risk={p.risk} />
-              </div>
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <CloudRain className="size-4" aria-hidden="true" />
-                <span className="tabular-nums text-lg font-semibold text-foreground">
-                  {p.predicted_rainfall_mm?.toFixed(2) ?? '—'}
-                </span>
-                <span className="text-xs">mm predicted (next hr)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="h-1.5 flex-1 rounded-full bg-secondary overflow-hidden">
-                  <div
-                    className={p.probability > 60 ? 'h-full bg-destructive' : p.probability > 30 ? 'h-full bg-warning' : 'h-full bg-primary'}
-                    style={{ width: `${p.probability}%` }}
-                  />
-                </div>
-                <span className="tabular-nums text-xs text-muted-foreground">{p.probability}%</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </GlassCard>
+      <LiveDistrictRisk hazard="cloudburst" initialData={predictions} />
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <GlassCard className="p-5 flex flex-col">

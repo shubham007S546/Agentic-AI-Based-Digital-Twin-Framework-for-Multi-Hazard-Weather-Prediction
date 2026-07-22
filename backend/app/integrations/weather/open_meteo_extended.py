@@ -7,11 +7,15 @@ fulfilling Phase 1 of making the platform real.
 """
 
 from typing import Any
+import logging
 import httpx
-import structlog
 from datetime import datetime, timezone
 
-logger = structlog.get_logger(__name__)
+try:
+    import structlog
+    logger = structlog.get_logger(__name__)
+except ImportError:
+    logger = logging.getLogger(__name__)
 
 # All 17 major districts/locations of Himachal Pradesh
 DISTRICT_COORDINATES = {

@@ -146,8 +146,7 @@ class RAGChain:
         if chitchat_reply is not None:
             self.memory.add_assistant_message(chitchat_reply)
             logger.info(
-                "ask() timing (chitchat)",
-                total=f"{time.perf_counter() - t_start:.2f}s"
+                f"ask() timing (chitchat) total={time.perf_counter() - t_start:.2f}s"
             )
             return {
                 "question": question,
@@ -211,12 +210,8 @@ class RAGChain:
         # retrieve = embedding + FAISS/BM25 + cross-encoder rerank,
         # prompt = pure string building (should be ~0), generate = LLM call.
         logger.info(
-            "ask() timing",
-            rewrite=f"{t_rewrite:.2f}s",
-            retrieve=f"{t_retrieve:.2f}s",
-            prompt_build=f"{t_prompt:.2f}s",
-            generate=f"{t_generate:.2f}s",
-            total=f"{t_total:.2f}s",
+            f"ask() timing rewrite={t_rewrite:.2f}s retrieve={t_retrieve:.2f}s "
+            f"prompt_build={t_prompt:.2f}s generate={t_generate:.2f}s total={t_total:.2f}s"
         )
 
         return {

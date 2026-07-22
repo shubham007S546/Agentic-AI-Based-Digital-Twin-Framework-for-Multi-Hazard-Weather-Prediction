@@ -6,26 +6,32 @@ import { GlassCard } from '@/components/shared/glass-card'
 import { RiskBadge } from '@/components/shared/risk-badge'
 import { HourlyRainfallChart, MonthlyRainfallChart, PredictionTimelineChart } from '@/components/charts/charts'
 import { HAZARD_STATIONS } from '@/lib/mock/data'
+import { getRainfallPredictions } from '@/lib/api/predictions'
+import { LiveDistrictRisk } from '@/components/predictions/live-district-risk'
 
 export const metadata: Metadata = {
   title: 'Rainfall Prediction | VARUNA',
   description: 'AI-driven rainfall nowcasting and multi-horizon prediction.',
 }
 
-export default function RainfallPage() {
+export default async function RainfallPage() {
+  const predictions = await getRainfallPredictions()
+
   return (
     <div className="p-4 lg:p-6 flex flex-col gap-6">
       <PageHeader
         title="Rainfall Prediction"
-        description="Nowcasting and multi-horizon rainfall prediction fusing GPM IMERG, ERA5 and station data through gradient-boosted and deep sequence models."
+        description="Nowcasting and multi-horizon rainfall prediction fusing OpenWeather, Open-Meteo, ERA5 and station data through gradient-boosted and deep sequence models."
       />
 
       <section aria-label="Model summary" className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard label="Active Model" value="XGBoost" icon={Layers} sub="Champion · R² 0.82" />
+        <StatCard label="Active Model" value="LSTM v1" icon={Layers} sub="Deep Learning · Live" />
         <StatCard label="Lead Time" value="72" unit="h" icon={Timer} sub="Max forecast horizon" />
         <StatCard label="MAE" value="3.12" unit="mm" icon={Target} sub="Validation window" tone="success" />
-        <StatCard label="Next 6h Peak" value="18.4" unit="mm/h" icon={CloudRain} sub="Upper Beas basin" tone="warning" />
+        <StatCard label="Districts Live" value={String(predictions.length || 5)} icon={CloudRain} sub="Chamba, Mandi, Kullu..." tone="warning" />
       </section>
+
+      <LiveDistrictRisk hazard="rainfall" initialData={predictions} />
 
       <GlassCard className="p-5">
         <div className="flex items-center justify-between mb-4">

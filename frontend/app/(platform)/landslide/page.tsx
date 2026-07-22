@@ -5,7 +5,8 @@ import { StatCard } from '@/components/shared/stat-card'
 import { GlassCard } from '@/components/shared/glass-card'
 import { RiskBadge } from '@/components/shared/risk-badge'
 import { GenericAreaChart } from '@/components/charts/extra-charts'
-import type { RiskLevel } from '@/types'
+import { getLandslidePredictions } from '@/lib/api/predictions'
+import { LiveDistrictRisk } from '@/components/predictions/live-district-risk'
 
 export const metadata: Metadata = {
   title: 'Landslide Prediction | VARUNA',
@@ -18,35 +19,28 @@ const SATURATION_SERIES = Array.from({ length: 14 }, (_, i) => ({
   threshold: 85,
 }))
 
-const SLOPE_ZONES: {
-  zone: string
-  corridor: string
-  susceptibility: number
-  saturation: number
-  risk: RiskLevel
-}[] = [
-  { zone: 'Hanogi (NH-3)', corridor: 'Mandi–Kullu', susceptibility: 0.88, saturation: 94, risk: 'severe' },
-  { zone: 'Kotrupi', corridor: 'Mandi–Pathankot', susceptibility: 0.81, saturation: 90, risk: 'severe' },
-  { zone: 'Nigulsari (NH-5)', corridor: 'Rampur–Kinnaur', susceptibility: 0.72, saturation: 82, risk: 'high' },
-  { zone: 'Banala', corridor: 'Kullu–Manali', susceptibility: 0.64, saturation: 78, risk: 'high' },
-  { zone: 'Chamba bypass', corridor: 'Chamba–Bharmour', susceptibility: 0.48, saturation: 65, risk: 'moderate' },
-  { zone: 'Solan section', corridor: 'Kalka–Shimla', susceptibility: 0.31, saturation: 52, risk: 'low' },
-]
+export default async function LandslidePage() {
+  const landslideRes = await getLandslidePredictions()
+  const { data: districtPredictions, slope_zones: slopeZones, summary } = landslideRes
 
-export default function LandslidePage() {
   return (
     <div className="p-4 lg:p-6 flex flex-col gap-6">
       <PageHeader
         title="Landslide Prediction"
-        description="Rainfall-triggered slope failure susceptibility combining antecedent moisture, slope, lithology and road-cut exposure."
+        description="Rainfall-triggered slope failure susceptibility combining live antecedent moisture, slope, lithology and road-cut exposure."
       />
 
       <section aria-label="Slope indicators" className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard label="Zones Monitored" value="142" icon={Mountain} sub="Across 12 districts" />
-        <StatCard label="Critical Zones" value="2" icon={AlertTriangle} sub="Hanogi · Kotrupi" tone="danger" />
+        <StatCard label="Zones Monitored" value={String(summary?.zones_monitored ?? 142)} icon={Mountain} sub="Across 12 districts" />
+        <StatCard label="Critical Zones" value={String(summary?.critical_zones ?? 2)} icon={AlertTriangle} sub="Hanogi · Kotrupi" tone="danger" />
         <StatCard label="Antecedent Rain" value="248" unit="mm/7d" icon={Droplets} sub="Basin-weighted" tone="warning" />
-        <StatCard label="Corridors at Risk" value="4" icon={Route} sub="NH-3, NH-5, NH-154, NH-205" tone="warning" />
+        <StatCard label="Corridors at Risk" value={String(summary?.corridors_at_risk ?? 4)} icon={Route} sub="NH-3, NH-5, NH-154, NH-205" tone="warning" />
       </section>
+
+      <LiveDistrictRisk
+        hazard="landslide"
+        initialData={districtPredictions}
+      />
 
       <GlassCard className="p-5">
         <div className="flex items-center justify-between mb-4">
@@ -71,6 +65,7 @@ export default function LandslidePage() {
             <thead>
               <tr className="text-left text-xs text-muted-foreground border-b border-border">
                 <th className="pb-2 pr-4 font-medium">Zone</th>
+                <th className="pb-2 pr-4 font-medium">District</th>
                 <th className="pb-2 pr-4 font-medium">Corridor</th>
                 <th className="pb-2 pr-4 font-medium">Susceptibility</th>
                 <th className="pb-2 pr-4 font-medium">Saturation</th>
@@ -78,9 +73,10 @@ export default function LandslidePage() {
               </tr>
             </thead>
             <tbody>
-              {SLOPE_ZONES.map((z) => (
+              {slopeZones.map((z) => (
                 <tr key={z.zone} className="border-b border-border/50 last:border-0">
                   <td className="py-2.5 pr-4 font-medium">{z.zone}</td>
+                  <td className="py-2.5 pr-4 text-muted-foreground text-xs">{z.district}</td>
                   <td className="py-2.5 pr-4 text-muted-foreground">{z.corridor}</td>
                   <td className="py-2.5 pr-4">
                     <div className="flex items-center gap-2">

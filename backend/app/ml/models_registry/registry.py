@@ -17,16 +17,19 @@ Design decisions:
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Dict, Optional
 
-import structlog
+try:
+    import structlog
+    logger = structlog.get_logger(__name__)
+except ImportError:
+    logger = logging.getLogger(__name__)
 
 from app.core.enums import HazardType
 from app.ml.inference.base import IModelPredictor
-
-logger = structlog.get_logger(__name__)
 
 
 @dataclass
