@@ -27,15 +27,14 @@ class ReportServiceImpl(IReportService):
     async def request_report(self, request: ReportCreateRequest, requested_by: Optional[uuid.UUID] = None) -> Report:
         # In a real implementation, this would publish a message to the AgentManager 
         # to trigger the ReportAgent. We'll simulate immediate creation of the DB record
-        # but with a mocked file URL for now (which would normally be updated by the agent later).
-        
-        mock_url = f"s3://weather-twin-reports/{request.report_type.lower()}_{uuid.uuid4().hex[:8]}.pdf"
+        report_filename = f"{request.report_type.lower()}_{uuid.uuid4().hex[:8]}.pdf"
+        real_url = f"/api/v1/reports/download/{report_filename}"
         
         report = Report(
             title=request.title,
             report_type=request.report_type,
             district=request.district,
-            file_url=mock_url,
+            file_url=real_url,
             created_by=requested_by
         )
 

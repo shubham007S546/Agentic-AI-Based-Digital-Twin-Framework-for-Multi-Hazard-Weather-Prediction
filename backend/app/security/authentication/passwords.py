@@ -10,6 +10,7 @@ Design decisions:
 """
 
 from passlib.context import CryptContext
+from passlib.exc import UnknownHashError
 
 # Create a single CryptContext using bcrypt
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -20,7 +21,10 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     Verify a plaintext password against a stored bcrypt hash.
     Safe against timing attacks.
     """
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return pwd_context.verify(plain_password, hashed_password)
+    except (UnknownHashError, ValueError, Exception):
+        return False
 
 
 def get_password_hash(password: str) -> str:

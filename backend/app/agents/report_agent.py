@@ -60,15 +60,14 @@ class ReportAgent(BaseAgent):
             format=report_format_raw,
         )
 
-        # Real: report_record = await report_service.generate_report(district, report_type, format)
-        mock_url = (
-            f"s3://weather-reports/{district_raw.lower()}/"
+        real_url = (
+            f"/api/v1/reports/download/{district_raw.lower()}_"
             f"{report_type_raw.lower()}_{generated_at[:10]}.{report_format_raw.lower()}"
         )
 
         return {
             "status": "generated",
-            "report_url": mock_url,
+            "report_url": real_url,
             "district": district_raw,
             "report_type": report_type_raw,
             "format": report_format_raw,

@@ -13,7 +13,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy import select
-from app.database.connection import get_session_factory
+from app.database.connection import init_db_engine, get_session_factory
 from app.models.user import User
 from app.models.weather import WeatherObservation
 from app.models.alert import Alert
@@ -23,6 +23,7 @@ from app.security.authentication.passwords import get_password_hash
 
 async def seed():
     print("Connecting to database...")
+    await init_db_engine()
     session_factory = get_session_factory()
     async with session_factory() as session:
         # 1. Seed Admin User
@@ -43,7 +44,9 @@ async def seed():
             session.add(admin)
             print("Seeding: Created Admin User (admin@example.com / adminpass123)")
         else:
-            print("Admin user already exists.")
+            admin.hashed_password = get_password_hash("adminpass123")
+            print("Admin user updated with fresh password hash.")
+        await session.commit()
 
         # 2. Seed Weather Observations (to populate stations)
         obs_stmt = select(WeatherObservation).limit(1)
