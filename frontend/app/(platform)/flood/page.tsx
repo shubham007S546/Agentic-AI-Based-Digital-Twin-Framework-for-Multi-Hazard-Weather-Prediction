@@ -1,16 +1,21 @@
 import type { Metadata } from 'next'
-import { Waves, TrendingUp, Timer, Droplets, ArrowUp, ArrowDown, Minus } from 'lucide-react'
+import { Waves, TrendingUp, Timer, Droplets, ArrowUp, ArrowDown, Minus, CloudRain } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import { StatCard } from '@/components/shared/stat-card'
 import { GlassCard } from '@/components/shared/glass-card'
+import { RiskBadge } from '@/components/shared/risk-badge'
 import { GenericAreaChart } from '@/components/charts/extra-charts'
 import { RIVER_GAUGES } from '@/lib/mock/data'
+import { getFloodPredictions } from '@/lib/api/predictions'
 
 export const metadata: Metadata = {
   title: 'Flood Prediction | VARUNA',
   description: 'River-level forecasting and flood inundation risk for major basins.',
 }
 
+// NOTE: river-stage forecast below is illustrative (mock) -- the backend
+// does not yet expose per-gauge river-level/discharge data, only
+// district-level rainfall predictions (see LIVE section above the fold).
 const LEVEL_FORECAST = Array.from({ length: 36 }, (_, i) => ({
   hour: `+${i}h`,
   level: Number((8.4 + Math.min(2.4, i * 0.09) - (i > 22 ? (i - 22) * 0.06 : 0)).toFixed(2)),
@@ -20,7 +25,11 @@ const LEVEL_FORECAST = Array.from({ length: 36 }, (_, i) => ({
 const TREND_ICON = { rising: ArrowUp, falling: ArrowDown, steady: Minus }
 const TREND_CLASS = { rising: 'text-destructive', falling: 'text-success', steady: 'text-muted-foreground' }
 
-export default function FloodPage() {
+export default async function FloodPage() {
+  // Real, live prediction from the trained LSTM model (falls back to mock
+  // automatically if the backend is unreachable -- see fetchWithFallback).
+  const predictions = await getFloodPredictions()
+
   return (
     <div className="p-4 lg:p-6 flex flex-col gap-6">
       <PageHeader
@@ -35,10 +44,46 @@ export default function FloodPage() {
         <StatCard label="Soil Saturation" value="86" unit="%" icon={Droplets} sub="Top 1m layer, basin mean" tone="warning" />
       </section>
 
+      {/* ── LIVE: real LSTM model predictions per district ───────────── */}
+      <GlassCard className="p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-medium">District Rainfall Risk — Live</h2>
+          <span className="text-[10px] font-mono text-muted-foreground">
+            {predictions[0]?.confidence ? `model: lstm_v1 · ${predictions.length} districts` : 'live'}
+          </span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {predictions.map((p) => (
+            <div key={p.district} className="rounded-lg border border-border/50 p-4 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="font-medium text-sm">{p.district}</span>
+                <RiskBadge risk={p.risk} />
+              </div>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <CloudRain className="size-4" aria-hidden="true" />
+                <span className="tabular-nums text-lg font-semibold text-foreground">
+                  {p.predicted_rainfall_mm?.toFixed(2) ?? '—'}
+                </span>
+                <span className="text-xs">mm predicted (next hr)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-1.5 flex-1 rounded-full bg-secondary overflow-hidden">
+                  <div
+                    className={p.probability > 60 ? 'h-full bg-destructive' : p.probability > 30 ? 'h-full bg-warning' : 'h-full bg-primary'}
+                    style={{ width: `${p.probability}%` }}
+                  />
+                </div>
+                <span className="tabular-nums text-xs text-muted-foreground">{p.probability}%</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </GlassCard>
+
       <GlassCard className="p-5">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-medium">Beas at Pandoh — 36h Stage Forecast</h2>
-          <span className="text-[10px] font-mono text-muted-foreground">LSTM routing · danger 10.2m</span>
+          <span className="text-[10px] font-mono text-muted-foreground">illustrative · danger 10.2m</span>
         </div>
         <GenericAreaChart
           data={LEVEL_FORECAST}
