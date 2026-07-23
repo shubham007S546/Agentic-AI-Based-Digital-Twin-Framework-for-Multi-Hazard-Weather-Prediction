@@ -3,7 +3,7 @@ import sys
 import json
 from pathlib import Path
 
-# Ensure the repository root is on sys.path so imports like `RAG_project` resolve
+# Ensure the repository root is on sys.path so imports like `RAG` resolve
 _repo_root = str(Path(__file__).resolve().parent.parent)
 if _repo_root not in sys.path:
     sys.path.insert(0, _repo_root)
@@ -14,8 +14,8 @@ if _repo_root not in sys.path:
 question = sys.argv[1] if len(sys.argv) > 1 else "What is the purpose of this project?"
 
 try:
-    from RAG_project.app import load_runtime_dependencies
-    from RAG_project.chains.rag_chain import RAGChain
+    from RAG.app import load_runtime_dependencies
+    from RAG.chains.rag_chain import RAGChain
 
     retriever = load_runtime_dependencies()
     rag = RAGChain(retriever)

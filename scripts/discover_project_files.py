@@ -1,7 +1,7 @@
 import yaml, os, json, sys
 from pathlib import Path
 
-CONFIG_PATH = Path(__file__).resolve().parents[1] / 'RAG_project' / 'knowledge_engine' / 'config' / 'knowledge_config.yaml'
+CONFIG_PATH = Path(__file__).resolve().parents[1] / 'RAG' / 'knowledge_engine' / 'config' / 'knowledge_config.yaml'
 
 if not CONFIG_PATH.exists():
     print(json.dumps({"error": "config_not_found", "path": str(CONFIG_PATH)}))
