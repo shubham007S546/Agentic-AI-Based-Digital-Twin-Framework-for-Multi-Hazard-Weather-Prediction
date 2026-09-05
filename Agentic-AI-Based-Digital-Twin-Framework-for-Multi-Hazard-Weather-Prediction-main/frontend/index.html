@@ -1,0 +1,1894 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KisaanAI — HP Crop Intelligence</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+:root {
+  --ink:     #0e1410;
+  --ink2:    #2a3028;
+  --ink3:    #4a5548;
+  --bg:      #f6f3ec;
+  --bg2:     #ede9e0;
+  --bg3:     #e3dfd4;
+  --surface: #ffffff;
+  --border:  rgba(14,20,16,0.12);
+  --border2: rgba(14,20,16,0.22);
+  --forest:  #1a4a28;
+  --green:   #2e7d46;
+  --green2:  #4caf6a;
+  --green-l: #e8f5ec;
+  --gold:    #c07d20;
+  --gold-l:  #fdf3e0;
+  --red:     #b33030;
+  --red-l:   #fdecea;
+  --blue:    #1d5f96;
+  --blue-l:  #e3eef9;
+  --font:    'Instrument Sans', sans-serif;
+  --serif:   'Syne', sans-serif;
+  --mono:    'JetBrains Mono', monospace;
+  --r:       8px;
+  --r-lg:    14px;
+  --shadow:  0 2px 12px rgba(14,20,16,0.08);
+  --shadow2: 0 8px 32px rgba(14,20,16,0.14);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:var(--font);background:var(--bg);color:var(--ink);font-size:14px;line-height:1.6}
+
+/* TOPBAR */
+.topbar{
+  position:sticky;top:0;z-index:200;
+  background:var(--forest);color:#fff;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 2rem;height:52px;
+  border-bottom:1px solid rgba(255,255,255,0.08);
+}
+.logo{font-family:var(--serif);font-size:1.2rem;font-weight:800;letter-spacing:-0.5px;display:flex;align-items:center;gap:10px}
+.logo-dot{width:8px;height:8px;border-radius:50%;background:var(--green2);display:inline-block}
+.topbar-right{font-size:11px;color:rgba(255,255,255,0.4);font-family:var(--mono)}
+.status-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:#4caf6a;margin-right:6px;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+
+/* TABS */
+.tabs{background:var(--forest);display:flex;padding:0 2rem;border-bottom:1px solid rgba(255,255,255,0.06)}
+.tab-btn{
+  height:40px;padding:0 1.25rem;border:none;background:none;
+  color:rgba(255,255,255,0.45);font-family:var(--font);font-size:12.5px;font-weight:500;
+  cursor:pointer;border-bottom:2px solid transparent;transition:all 0.2s;
+  display:flex;align-items:center;gap:6px;letter-spacing:0.2px;
+}
+.tab-btn:hover{color:rgba(255,255,255,0.8)}
+.tab-btn.active{color:#fff;border-bottom-color:var(--green2)}
+
+/* PAGE */
+.tab-content{display:none}
+.tab-content.active{display:block}
+.page{max-width:1140px;margin:0 auto;padding:2rem 1.5rem 4rem}
+
+/* CARDS */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:1.4rem}
+.section-lbl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1.4px;color:var(--ink3);margin-bottom:1rem;display:flex;align-items:center;gap:8px}
+.section-lbl::after{content:'';flex:1;height:1px;background:var(--border)}
+
+/* GRIDS */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:1.25rem}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem}
+@media(max-width:860px){.g2,.g3,.g4{grid-template-columns:1fr 1fr}}
+@media(max-width:540px){.g2,.g3,.g4{grid-template-columns:1fr}}
+
+/* ═══════════ DASHBOARD ═══════════ */
+.dash-hero{
+  background:var(--forest);color:#fff;
+  border-radius:var(--r-lg);padding:2rem 2.5rem;margin-bottom:1.5rem;
+  display:flex;align-items:center;justify-content:space-between;gap:2rem;
+  position:relative;overflow:hidden;
+}
+.dash-hero::before{content:'';position:absolute;right:-60px;top:-60px;width:260px;height:260px;border-radius:50%;background:rgba(76,175,106,0.12);pointer-events:none}
+.dash-hero::after{content:'';position:absolute;right:80px;bottom:-80px;width:180px;height:180px;border-radius:50%;background:rgba(76,175,106,0.07);pointer-events:none}
+.dash-hero h1{font-family:var(--serif);font-size:1.9rem;font-weight:800;line-height:1.15;margin-bottom:0.5rem}
+.dash-hero p{color:rgba(255,255,255,0.55);font-size:0.88rem;max-width:420px}
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:600;padding:3px 10px;border-radius:20px;letter-spacing:0.8px;text-transform:uppercase;margin-bottom:0.6rem}
+.badge.live{background:rgba(76,175,106,0.2);color:var(--green2);border:1px solid rgba(76,175,106,0.3)}
+.hero-stats{display:flex;gap:2rem;flex-shrink:0;text-align:right}
+.hs{font-family:var(--mono)}
+.hs-num{font-size:2.4rem;font-weight:500;color:var(--green2);line-height:1}
+.hs-lbl{font-size:10px;color:rgba(255,255,255,0.4);letter-spacing:0.5px;margin-top:3px}
+
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:1rem 1.2rem}
+.kpi .kl{font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:0.7px;margin-bottom:4px}
+.kpi .kv{font-family:var(--mono);font-size:1.45rem;font-weight:500}
+.kpi .ks{font-size:11px;color:var(--ink3);margin-top:3px}
+.kpi.green .kv{color:var(--green)}
+.kpi.gold .kv{color:var(--gold)}
+.kpi.red .kv{color:var(--red)}
+.kpi.blue .kv{color:var(--blue)}
+
+.weather{background:linear-gradient(135deg,#0e2618,#1a4a28);border-radius:var(--r);padding:1.1rem 1.4rem;color:#fff;display:flex;align-items:center;justify-content:space-between;gap:1rem}
+.wt{font-family:var(--mono);font-size:2rem;font-weight:500}
+.wl{font-size:10px;color:rgba(255,255,255,0.5);letter-spacing:0.5px;text-transform:uppercase}
+.wd{font-size:12px;color:rgba(255,255,255,0.7);margin-top:2px}
+.wds{display:flex;gap:1.5rem}
+.wdi{text-align:center}
+.wdi .wdl{font-size:9px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px}
+.wdi .wdv{font-family:var(--mono);font-size:13px;font-weight:500}
+
+.alert{border-radius:6px;padding:9px 12px;font-size:12px;line-height:1.5;display:flex;gap:8px;align-items:flex-start;margin-bottom:7px}
+.alert:last-child{margin-bottom:0}
+.alert.green{background:var(--green-l);color:#144020;border-left:3px solid var(--green)}
+.alert.gold{background:var(--gold-l);color:#6b4010;border-left:3px solid var(--gold)}
+.alert.red{background:var(--red-l);color:#7a1a1a;border-left:3px solid var(--red)}
+
+.price-table{width:100%;border-collapse:collapse;font-size:13px}
+.price-table th{text-align:left;padding:7px 10px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:var(--ink3);border-bottom:1px solid var(--border)}
+.price-table td{padding:8px 10px;border-bottom:1px solid var(--border)}
+.price-table tr:last-child td{border-bottom:none}
+.trend-up{color:var(--green);font-size:11px}
+.trend-dn{color:var(--red);font-size:11px}
+.pill{display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px}
+.pill.g{background:var(--green-l);color:var(--green)}
+.pill.a{background:var(--gold-l);color:var(--gold)}
+
+/* ═══════════ DISEASE TAB ═══════════ */
+.upload-zone{
+  border:2px dashed var(--border2);border-radius:var(--r-lg);
+  padding:2.5rem 2rem;text-align:center;cursor:pointer;
+  transition:all 0.2s;background:var(--surface);position:relative;
+}
+.upload-zone:hover,.upload-zone.drag{border-color:var(--green);background:var(--green-l)}
+.upload-zone input{display:none}
+.uz-icon{font-size:2.8rem;margin-bottom:0.8rem}
+.uz-title{font-family:var(--serif);font-size:1.2rem;font-weight:700;margin-bottom:0.35rem}
+.uz-sub{color:var(--ink3);font-size:12.5px}
+.upload-btn{
+  display:inline-block;margin-top:0.9rem;padding:9px 22px;
+  background:var(--forest);color:#fff;border-radius:var(--r);
+  font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer;
+  transition:background 0.15s;
+}
+.upload-btn:hover{background:var(--green)}
+
+#preview-wrap{margin-top:1rem;display:none}
+#preview-img{width:100%;border-radius:var(--r);max-height:260px;object-fit:cover;display:block}
+.predict-btn{
+  width:100%;margin-top:0.75rem;padding:11px;
+  background:var(--green);color:#fff;border:none;border-radius:var(--r);
+  font-family:var(--font);font-size:14px;font-weight:600;cursor:pointer;
+  transition:background 0.15s,transform 0.1s;display:flex;align-items:center;justify-content:center;gap:8px;
+}
+.predict-btn:hover{background:var(--forest)}
+.predict-btn:active{transform:scale(0.99)}
+.predict-btn:disabled{opacity:0.6;cursor:not-allowed}
+
+/* Disease Result */
+.dis-result{display:none}
+.dis-result.show{display:block}
+
+.dis-header-card{
+  border-radius:var(--r-lg);padding:1.4rem;margin-bottom:1rem;
+  display:flex;align-items:flex-start;gap:1rem;
+}
+.dis-header-card.disease{background:var(--red-l);border:1px solid rgba(179,48,48,0.2)}
+.dis-header-card.healthy{background:var(--green-l);border:1px solid rgba(46,125,70,0.2)}
+.dis-bigicon{font-size:2.5rem;flex-shrink:0;width:56px;height:56px;display:flex;align-items:center;justify-content:center;border-radius:12px}
+.dis-bigicon.d{background:rgba(179,48,48,0.12)}
+.dis-bigicon.h{background:rgba(46,125,70,0.12)}
+.dis-name{font-family:var(--serif);font-size:1.35rem;font-weight:700;line-height:1.2;margin-bottom:3px}
+.dis-crop{font-size:12px;color:var(--ink3);margin-bottom:8px}
+
+.conf-row{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.conf-lbl{font-size:11px;color:var(--ink3);min-width:120px}
+.conf-bar-w{flex:1;height:7px;border-radius:4px;background:rgba(0,0,0,0.08);overflow:hidden}
+.conf-bar-f{height:100%;border-radius:4px;transition:width 1s ease}
+.conf-bar-f.high{background:var(--green)}
+.conf-bar-f.mid{background:var(--gold)}
+.conf-bar-f.low{background:var(--red)}
+.conf-pct{font-family:var(--mono);font-size:12px;font-weight:500;min-width:38px;text-align:right}
+
+/* XAI Section */
+.xai-grid{display:grid;grid-template-columns:1fr 1fr;gap:0.9rem;margin-bottom:1rem}
+.xai-item{background:var(--bg2);border-radius:var(--r);padding:0.9rem 1rem}
+.xai-lbl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;color:var(--ink3);margin-bottom:5px}
+.xai-val{font-size:13px;color:var(--ink);line-height:1.4}
+.xai-item.full{grid-column:1/-1}
+
+.rec-box{border-radius:var(--r);padding:1rem 1.1rem;margin-top:0.8rem}
+.rec-box.disease-rec{background:var(--red-l);border-left:3px solid var(--red)}
+.rec-box.healthy-rec{background:var(--green-l);border-left:3px solid var(--green)}
+.rec-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px}
+.rec-title.d{color:var(--red)}
+.rec-title.h{color:var(--green)}
+.rec-text{font-size:13px;line-height:1.6;color:var(--ink2)}
+
+.history-item{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
+.history-item:last-child{border-bottom:none}
+.hi-thumb{width:36px;height:36px;border-radius:7px;flex-shrink:0;object-fit:cover}
+.hi-info{flex:1}
+.hi-name{font-size:12.5px;font-weight:500}
+.hi-meta{font-size:11px;color:var(--ink3)}
+.hi-conf{font-family:var(--mono);font-size:12px;color:var(--green)}
+
+/* ═══════════ COST TAB ═══════════ */
+.field{margin-bottom:0.85rem}
+.field label{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--ink3);margin-bottom:4px;font-weight:500}
+.field label span{font-family:var(--mono);color:var(--green);font-size:11px}
+select,input[type=number]{
+  width:100%;padding:8px 10px;
+  border:1px solid var(--border);border-radius:var(--r);
+  font-family:var(--font);font-size:13px;
+  background:var(--surface);color:var(--ink);
+  appearance:none;outline:none;transition:border-color 0.15s;
+}
+select:focus,input:focus{border-color:var(--green)}
+select{
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='7' viewBox='0 0 12 7'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%234a5548' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 10px center;padding-right:28px;
+}
+input[type=range]{
+  width:100%;-webkit-appearance:none;appearance:none;
+  height:4px;border-radius:2px;border:none;padding:0;cursor:pointer;
+  background:linear-gradient(to right,var(--green) 0%,var(--green) var(--v,50%),var(--border2) var(--v,50%),var(--border2) 100%);
+}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;background:var(--green);border-radius:50%;box-shadow:0 0 0 3px #fff,0 0 0 4px var(--green)}
+.chk-row{display:flex;align-items:center;gap:7px;padding:5px 0;cursor:pointer}
+.chk-row input[type=checkbox]{width:14px;height:14px;accent-color:var(--green);cursor:pointer}
+.chk-row span{font-size:12px;color:var(--ink3)}
+
+.calc-btn{
+  width:100%;padding:12px;background:var(--forest);color:#fff;
+  border:none;border-radius:var(--r);font-family:var(--font);font-size:14px;font-weight:600;
+  cursor:pointer;letter-spacing:0.3px;transition:background 0.15s,transform 0.1s;margin-top:1.1rem;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+}
+.calc-btn:hover{background:var(--green)}
+.calc-btn:active{transform:scale(0.99)}
+.calc-btn:disabled{opacity:0.6;cursor:not-allowed}
+
+.result-hero{text-align:center;padding:1.8rem 1rem 1.4rem;border-bottom:1px solid var(--border)}
+.rh-lbl{font-size:10px;text-transform:uppercase;letter-spacing:1.2px;color:var(--ink3);margin-bottom:5px}
+.rh-amt{font-family:var(--mono);font-size:3rem;font-weight:500;color:var(--green);letter-spacing:-2px}
+.rh-sub{font-size:12px;color:var(--ink3);margin-top:4px}
+
+.metric-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:1.1rem 0}
+.metric{background:var(--bg2);border-radius:var(--r);padding:10px;text-align:center}
+.metric .ml{font-size:9px;color:var(--ink3);text-transform:uppercase;letter-spacing:0.5px}
+.metric .mv{font-family:var(--mono);font-size:1rem;font-weight:500;margin-top:2px}
+.metric .mv.g{color:var(--green)}
+.metric .mv.a{color:var(--gold)}
+
+.br-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)}
+.br-row:last-child{border-bottom:none}
+.br-lbl{flex:1;font-size:12px;color:var(--ink2)}
+.br-bar-w{width:90px;height:5px;background:var(--bg2);border-radius:3px;overflow:hidden}
+.br-bar{height:100%;background:var(--green);border-radius:3px}
+.br-pct{font-size:10px;color:var(--ink3);min-width:28px;text-align:right}
+.br-amt{font-family:var(--mono);font-size:11px;min-width:72px;text-align:right}
+
+.tip{border-radius:var(--r);padding:9px 12px;font-size:12px;margin-top:0.7rem;display:flex;gap:8px;align-items:flex-start;line-height:1.5}
+.tip.green{background:var(--green-l);color:#144020}
+.tip.gold{background:var(--gold-l);color:#6b4010}
+.tip.red{background:var(--red-l);color:#7a1c1c}
+
+/* SPINNER */
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,0.35);border-top-color:#fff;border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.hidden{display:none !important}
+.chart-wrap{position:relative;width:100%}
+
+/* ABOUT */
+.about-hero{background:var(--forest);color:#fff;border-radius:var(--r-lg);padding:2.5rem;margin-bottom:1.5rem;text-align:center}
+.about-hero h1{font-family:var(--serif);font-size:2rem;font-weight:800;margin-bottom:0.6rem}
+.about-hero p{color:rgba(255,255,255,0.55);max-width:540px;margin:0 auto;font-size:0.9rem;line-height:1.7}
+.flow-step{display:flex;align-items:flex-start;gap:14px;padding:13px 0;border-bottom:1px solid var(--border)}
+.flow-step:last-child{border-bottom:none}
+.flow-num{width:28px;height:28px;border-radius:50%;background:var(--green);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
+.flow-body h4{font-size:13.5px;font-weight:600;margin-bottom:2px}
+.flow-body p{font-size:12px;color:var(--ink3)}
+.tech-tag{display:inline-block;font-size:11px;font-weight:500;padding:3px 9px;border-radius:var(--r);background:var(--bg2);color:var(--ink3);border:1px solid var(--border);margin:2px}
+.mc-header{background:var(--forest);color:#fff;padding:1.1rem 1.4rem;border-radius:var(--r-lg) var(--r-lg) 0 0}
+.mc-header h3{font-family:var(--serif);font-size:1.05rem;font-weight:700}
+.mc-header p{font-size:11px;color:rgba(255,255,255,0.45);margin-top:2px}
+.mc-body{padding:1.2rem 1.4rem;background:var(--surface);border:1px solid var(--border);border-top:none;border-radius:0 0 var(--r-lg) var(--r-lg)}
+.mc-stat-row{display:flex;justify-content:space-around;padding:0.9rem 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin:0.9rem 0}
+.mc-stat{text-align:center}
+.mc-stat .sn{font-family:var(--mono);font-size:1.35rem;font-weight:500;color:var(--green)}
+.mc-stat .sl{font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:0.5px}
+.feature-list{list-style:none}
+.feature-list li{display:flex;gap:9px;padding:6px 0;font-size:12.5px;color:var(--ink3);border-bottom:1px solid var(--border)}
+.feature-list li:last-child{border-bottom:none}
+.feature-list li::before{content:'✓';color:var(--green);font-weight:700;flex-shrink:0}
+
+/* ═══════════ AI AGENTS TAB ═══════════ */
+.agent-hero{background:linear-gradient(135deg,#0a0f1a 0%,#0e2a1e 40%,#162040 100%);color:#fff;border-radius:var(--r-lg);padding:2.5rem;margin-bottom:1.5rem;position:relative;overflow:hidden}
+.agent-hero::before{content:'';position:absolute;right:-40px;top:-40px;width:200px;height:200px;border-radius:50%;background:rgba(76,175,106,0.1);pointer-events:none}
+.agent-hero::after{content:'';position:absolute;left:30%;bottom:-60px;width:300px;height:300px;border-radius:50%;background:rgba(29,95,150,0.08);pointer-events:none}
+.agent-hero h1{font-family:var(--serif);font-size:2rem;font-weight:800;line-height:1.15;margin-bottom:0.5rem}
+.agent-hero p{color:rgba(255,255,255,0.5);font-size:0.88rem;max-width:500px}
+.agent-hero-stats{display:flex;gap:2rem;margin-top:1.2rem}
+.ahs{text-align:center}
+.ahs-num{font-family:var(--mono);font-size:2rem;font-weight:600;background:linear-gradient(135deg,var(--green2),#6ee7a0);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.ahs-lbl{font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.6px;margin-top:2px}
+
+.pipeline-controls{display:flex;gap:1rem;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap}
+.run-pipeline-btn{
+  padding:10px 28px;border:none;border-radius:var(--r);
+  background:linear-gradient(135deg,var(--forest),var(--green));color:#fff;
+  font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer;
+  transition:all 0.2s;display:flex;align-items:center;gap:8px;
+  box-shadow:0 4px 15px rgba(46,125,70,0.3);
+}
+.run-pipeline-btn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(46,125,70,0.4)}
+.run-pipeline-btn:disabled{opacity:0.5;cursor:not-allowed;transform:none}
+.pipeline-status{font-size:12px;color:var(--ink3);font-family:var(--mono)}
+
+.pipeline-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:0.8rem;margin-bottom:1.5rem}
+.agent-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r);
+  padding:1rem;cursor:pointer;transition:all 0.25s;position:relative;overflow:hidden;
+}
+.agent-card::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:var(--border);transition:background 0.3s}
+.agent-card:hover{border-color:var(--green);transform:translateY(-2px);box-shadow:var(--shadow)}
+.agent-card.running{border-color:var(--gold);animation:agentPulse 1.5s infinite}
+.agent-card.running::before{background:var(--gold)}
+.agent-card.completed{border-color:var(--green)}
+.agent-card.completed::before{background:var(--green)}
+.agent-card.failed{border-color:var(--red)}
+.agent-card.failed::before{background:var(--red)}
+.agent-card.skipped{opacity:0.5;border-style:dashed}
+.agent-card.skipped::before{background:var(--ink3)}
+@keyframes agentPulse{0%,100%{box-shadow:0 0 0 0 rgba(192,125,32,0.3)}50%{box-shadow:0 0 12px 4px rgba(192,125,32,0.15)}}
+
+.ac-header{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.ac-icon{font-size:1.3rem}
+.ac-name{font-size:11.5px;font-weight:600;letter-spacing:0.2px;flex:1}
+.ac-badge{font-size:9px;font-weight:600;padding:2px 7px;border-radius:10px;text-transform:uppercase;letter-spacing:0.5px}
+.ac-badge.idle{background:var(--bg2);color:var(--ink3)}
+.ac-badge.running{background:rgba(192,125,32,0.15);color:var(--gold)}
+.ac-badge.completed{background:rgba(46,125,70,0.12);color:var(--green)}
+.ac-badge.failed{background:rgba(179,48,48,0.12);color:var(--red)}
+.ac-badge.skipped{background:var(--bg2);color:var(--ink3)}
+.ac-desc{font-size:10.5px;color:var(--ink3);line-height:1.4}
+.ac-timing{font-family:var(--mono);font-size:10px;color:var(--green);margin-top:5px}
+
+.pipeline-summary{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:1.3rem;margin-bottom:1.5rem;display:none}
+.pipeline-summary.show{display:block}
+.ps-row{display:flex;gap:1.5rem;flex-wrap:wrap}
+.ps-stat{text-align:center;min-width:80px}
+.ps-num{font-family:var(--mono);font-size:1.6rem;font-weight:600}
+.ps-num.g{color:var(--green)}.ps-num.r{color:var(--red)}.ps-num.a{color:var(--gold)}
+.ps-lbl{font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:0.5px}
+
+.agent-detail-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:1.4rem;display:none}
+.agent-detail-panel.show{display:block}
+.adp-title{font-family:var(--serif);font-size:1.2rem;font-weight:700;margin-bottom:0.5rem;display:flex;align-items:center;gap:8px}
+.adp-meta{display:grid;grid-template-columns:1fr 1fr;gap:0.7rem;margin-bottom:1rem}
+.adp-item{background:var(--bg2);border-radius:var(--r);padding:0.7rem 0.9rem}
+.adp-item-lbl{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;color:var(--ink3);margin-bottom:3px}
+.adp-item-val{font-size:12.5px;color:var(--ink)}
+
+/* LangGraph Viz */
+.langgraph-flow{display:flex;align-items:center;gap:0;overflow-x:auto;padding:1rem 0;margin-bottom:1rem}
+.lg-node{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:8px 14px;font-size:11px;font-weight:500;white-space:nowrap;transition:all 0.3s;min-width:120px;text-align:center}
+.lg-node.active{border-color:var(--green);background:var(--green-l);color:var(--forest);font-weight:600;box-shadow:0 0 10px rgba(46,125,70,0.15)}
+.lg-node.done{border-color:var(--green);color:var(--green)}
+.lg-arrow{color:var(--ink3);font-size:16px;margin:0 2px;flex-shrink:0}
+
+/* Agent Chat */
+.agent-chat{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;margin-top:1.5rem}
+.agent-chat-header{background:var(--forest);color:#fff;padding:0.9rem 1.2rem;font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px}
+.agent-chat-body{height:320px;overflow-y:auto;padding:1rem;display:flex;flex-direction:column;gap:0.7rem}
+.agent-chat-input{display:flex;gap:8px;padding:0.8rem 1rem;border-top:1px solid var(--border);background:var(--bg)}
+.agent-chat-input input{flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r);font-family:var(--font);font-size:13px;outline:none}
+.agent-chat-input input:focus{border-color:var(--green)}
+.agent-chat-input button{padding:8px 18px;background:var(--forest);color:#fff;border:none;border-radius:var(--r);font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer}
+.acm{max-width:85%;padding:8px 12px;border-radius:10px;font-size:12.5px;line-height:1.5}
+.acm.user{background:var(--green-l);color:var(--forest);align-self:flex-end;border-bottom-right-radius:3px}
+.acm.system{background:var(--bg2);color:var(--ink2);align-self:flex-start;border-bottom-left-radius:3px}
+.acm.step{background:rgba(29,95,150,0.08);border:1px solid rgba(29,95,150,0.15);color:var(--ink2);align-self:flex-start;border-bottom-left-radius:3px;font-family:var(--mono);font-size:11px}
+.typing-dots{display:inline-flex;gap:3px;padding:6px 0}
+.typing-dots span{width:6px;height:6px;border-radius:50%;background:var(--ink3);animation:dotBounce 1.2s infinite}
+.typing-dots span:nth-child(2){animation-delay:0.2s}
+.typing-dots span:nth-child(3){animation-delay:0.4s}
+@keyframes dotBounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-6px)}}
+
+/* ═══════════ RAG ENGINE TAB ═══════════ */
+.rag-hero{background:linear-gradient(135deg,#1a0a2e 0%,#0e1a3a 50%,#0a2e1a 100%);color:#fff;border-radius:var(--r-lg);padding:2.5rem;margin-bottom:1.5rem;position:relative;overflow:hidden}
+.rag-hero::before{content:'';position:absolute;right:0;top:0;width:300px;height:300px;background:radial-gradient(circle,rgba(99,102,241,0.12),transparent 70%);pointer-events:none}
+.rag-hero h1{font-family:var(--serif);font-size:2rem;font-weight:800;line-height:1.15;margin-bottom:0.5rem}
+.rag-hero p{color:rgba(255,255,255,0.5);font-size:0.88rem;max-width:520px}
+.rag-hero-badges{display:flex;gap:8px;margin-top:1rem;flex-wrap:wrap}
+.rag-badge{font-size:10px;font-weight:600;padding:4px 12px;border-radius:20px;background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.7);border:1px solid rgba(255,255,255,0.1);letter-spacing:0.3px}
+
+.rag-pipeline{display:flex;align-items:center;gap:0;overflow-x:auto;padding:1rem 0;margin-bottom:1.5rem}
+.rag-stage{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:10px 14px;text-align:center;min-width:110px;transition:all 0.3s;cursor:default}
+.rag-stage.active{border-color:var(--blue);background:var(--blue-l);box-shadow:0 0 12px rgba(29,95,150,0.12)}
+.rag-stage.done{border-color:var(--green);background:var(--green-l)}
+.rag-stage-icon{font-size:1.3rem;margin-bottom:3px}
+.rag-stage-name{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--ink2)}
+.rag-stage-val{font-family:var(--mono);font-size:10px;color:var(--ink3);margin-top:2px}
+.rag-arrow{color:var(--ink3);font-size:16px;margin:0 2px;flex-shrink:0}
+
+.rag-config-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0.8rem;margin-bottom:1.5rem}
+.rag-config-item{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:0.9rem}
+.rci-lbl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.7px;color:var(--ink3);margin-bottom:5px;display:flex;justify-content:space-between}
+.rci-lbl span{font-family:var(--mono);color:var(--blue);font-weight:500}
+
+.rag-demo{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;margin-bottom:1.5rem}
+.rag-demo-header{background:linear-gradient(135deg,#1a0a2e,#0e1a3a);color:#fff;padding:0.9rem 1.2rem;font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px}
+.rag-demo-input{display:flex;gap:8px;padding:1rem;border-bottom:1px solid var(--border);background:var(--bg)}
+.rag-demo-input input{flex:1;padding:9px 14px;border:1px solid var(--border);border-radius:var(--r);font-family:var(--font);font-size:13px;outline:none}
+.rag-demo-input input:focus{border-color:var(--blue)}
+.rag-demo-input button{padding:9px 22px;background:linear-gradient(135deg,#1d5f96,#2979b3);color:#fff;border:none;border-radius:var(--r);font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
+.rag-demo-body{padding:1rem;min-height:200px}
+
+.rag-step{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:0.8rem 1rem;margin-bottom:0.7rem;animation:ragStepIn 0.3s ease}
+@keyframes ragStepIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.rag-step-header{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.rag-step-num{width:22px;height:22px;border-radius:50%;background:var(--blue);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.rag-step-title{font-size:12px;font-weight:600;color:var(--ink)}
+.rag-step-time{font-family:var(--mono);font-size:10px;color:var(--ink3);margin-left:auto}
+.rag-step-content{font-size:11.5px;color:var(--ink3);line-height:1.5;font-family:var(--mono)}
+.rag-step-content .chunk{background:rgba(29,95,150,0.06);border:1px solid rgba(29,95,150,0.12);border-radius:4px;padding:5px 8px;margin:3px 0;font-size:11px}
+.rag-step-content .score{color:var(--blue);font-weight:600}
+.rag-step-content .answer{font-family:var(--font);font-size:12.5px;color:var(--ink);line-height:1.6}
+
+.rag-breakdown{display:grid;grid-template-columns:repeat(4,1fr);gap:0.8rem;margin-top:1.5rem}
+@media(max-width:860px){.rag-breakdown{grid-template-columns:1fr 1fr}}
+@media(max-width:540px){.rag-breakdown{grid-template-columns:1fr}}
+.rb-col{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:0.9rem}
+.rb-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.rb-title.faiss{color:#e05a30}.rb-title.bm25{color:var(--blue)}.rb-title.rrf{color:var(--gold)}.rb-title.ce{color:var(--green)}
+.rb-item{display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:11px;border-bottom:1px solid rgba(0,0,0,0.04)}
+.rb-item:last-child{border-bottom:none}
+.rb-chunk{color:var(--ink2);font-size:10.5px}
+.rb-score{font-family:var(--mono);font-size:10px;font-weight:600}
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="logo"><div class="logo-dot"></div>KisaanAI <span style="font-size:11px;font-weight:400;color:rgba(255,255,255,0.4);font-family:var(--mono);margin-left:4px">/ HP AgriSmart</span></div>
+  <div class="topbar-right"><span class="status-dot"></span>ResNet9 + Random Forest · 2024-25</div>
+</div>
+
+<!-- TABS -->
+<div class="tabs">
+  <button class="tab-btn active" onclick="switchTab('dashboard',this)">📊 Dashboard</button>
+  <button class="tab-btn" onclick="switchTab('disease',this)">🔬 Disease Detection</button>
+  <button class="tab-btn" onclick="switchTab('cost',this)">💰 Cost Estimator</button>
+  <button class="tab-btn" onclick="switchTab('about',this)">ℹ About</button>
+  <button class="tab-btn" onclick="switchTab('agents',this)">🤖 AI Agents</button>
+  <button class="tab-btn" onclick="switchTab('rag',this)">📚 RAG Engine</button>
+</div>
+
+<!-- ══════ TAB 1: DASHBOARD ══════ -->
+<div class="tab-content active" id="tab-dashboard">
+<div class="page">
+
+  <div class="dash-hero">
+    <div>
+      <div class="badge live"><span class="status-dot"></span>Live · 2024-25 Season</div>
+      <h1>Himachal Pradesh<br>Crop Intelligence</h1>
+      <p>Market prices, disease alerts, cost benchmarks — built for HP's 12 districts and their unique altitude farming.</p>
+    </div>
+    <div class="hero-stats">
+      <div class="hs"><div class="hs-num">12</div><div class="hs-lbl">Districts</div></div>
+      <div class="hs"><div class="hs-num">38</div><div class="hs-lbl">Diseases</div></div>
+      <div class="hs"><div class="hs-num">96%</div><div class="hs-lbl">Accuracy</div></div>
+    </div>
+  </div>
+
+  <div class="g4" style="margin-bottom:1.5rem">
+    <div class="kpi green"><div class="kl">Avg Tomato Price</div><div class="kv">₹1,680<span style="font-size:0.9rem">/q</span></div><div class="ks">▲ 8.3% vs last month</div></div>
+    <div class="kpi gold"><div class="kl">Disease Risk Index</div><div class="kv">Moderate</div><div class="ks">Blight alert: Shimla, Kullu</div></div>
+    <div class="kpi blue"><div class="kl">Avg Production Cost</div><div class="kv">₹1.4L<span style="font-size:0.9rem">/ac</span></div><div class="ks">Across all crops</div></div>
+    <div class="kpi green"><div class="kl">Best ROI Crop</div><div class="kv">Apple</div><div class="ks">Est. 38–55% ROI this season</div></div>
+  </div>
+
+  <div class="g2" style="margin-bottom:1.5rem">
+    <div>
+      <div class="section-lbl">Current Conditions</div>
+      <div class="weather">
+        <div><div class="wl">Shimla, HP · 2,206m</div><div class="wt">14°C</div><div class="wd">Partly cloudy · Light wind</div></div>
+        <div class="wds">
+          <div class="wdi"><div class="wdl">Humidity</div><div class="wdv">72%</div></div>
+          <div class="wdi"><div class="wdl">Rain</div><div class="wdv">Low</div></div>
+          <div class="wdi"><div class="wdl">UV</div><div class="wdv">4</div></div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="section-lbl">Seasonal Alerts</div>
+      <div class="alert gold"><span>⚠</span><span>Early blight risk high in Shimla &amp; Kullu. Apply fungicide preventively on tomato &amp; potato.</span></div>
+      <div class="alert green"><span>✓</span><span>Apple harvest window approaching. Expect ₹3,500–6,800/quintal this season.</span></div>
+      <div class="alert red"><span>!</span><span>Frost risk below 1,200m in Lahaul-Spiti. Protect ginger &amp; capsicum seedlings.</span></div>
+    </div>
+  </div>
+
+  <div class="g2" style="margin-bottom:1.5rem">
+    <div class="card"><div class="section-lbl">Market Price Trends (₹/quintal)</div><div class="chart-wrap" style="height:220px"><canvas id="priceChart"></canvas></div></div>
+    <div class="card"><div class="section-lbl">Production Cost by Crop (₹/acre avg)</div><div class="chart-wrap" style="height:220px"><canvas id="costChart"></canvas></div></div>
+  </div>
+
+  <div class="g2">
+    <div class="card">
+      <div class="section-lbl">Live Mandi Prices</div>
+      <table class="price-table">
+        <thead><tr><th>Crop</th><th>Price (₹/q)</th><th>Trend</th><th>Season</th></tr></thead>
+        <tbody>
+          <tr><td>Tomato</td><td><b>₹1,680</b></td><td class="trend-up">▲ 8.3%</td><td><span class="pill g">Kharif</span></td></tr>
+          <tr><td>Apple</td><td><b>₹4,850</b></td><td class="trend-up">▲ 12.1%</td><td><span class="pill g">Harvest</span></td></tr>
+          <tr><td>Potato</td><td><b>₹1,200</b></td><td class="trend-dn">▼ 4.2%</td><td><span class="pill a">Rabi</span></td></tr>
+          <tr><td>Capsicum</td><td><b>₹2,100</b></td><td class="trend-up">▲ 5.6%</td><td><span class="pill g">Kharif</span></td></tr>
+          <tr><td>Ginger</td><td><b>₹3,200</b></td><td class="trend-up">▲ 18.4%</td><td><span class="pill g">Harvest</span></td></tr>
+          <tr><td>Onion</td><td><b>₹1,850</b></td><td class="trend-dn">▼ 2.1%</td><td><span class="pill a">Rabi</span></td></tr>
+          <tr><td>Wheat</td><td><b>₹2,150</b></td><td>— Stable</td><td><span class="pill a">Rabi</span></td></tr>
+          <tr><td>Pea</td><td><b>₹2,800</b></td><td class="trend-up">▲ 9.7%</td><td><span class="pill g">Kharif</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card"><div class="section-lbl">District-wise Profitability Index (ROI %)</div><div class="chart-wrap" style="height:280px"><canvas id="distChart"></canvas></div></div>
+  </div>
+
+</div>
+</div>
+
+<!-- ══════ TAB 2: DISEASE DETECTION ══════ -->
+<div class="tab-content" id="tab-disease">
+<div class="page">
+
+  <div style="margin-bottom:1.5rem">
+    <h2 style="font-family:var(--serif);font-size:1.6rem;font-weight:800;margin-bottom:0.35rem">Plant Disease Detection</h2>
+    <p style="color:var(--ink3);font-size:13px">Powered by ResNet9 trained on 87K+ plant images · 38 disease classes · Instant AI diagnosis + recovery recommendations</p>
+  </div>
+
+  <div class="g2" style="align-items:start">
+    <!-- Upload Panel -->
+    <div>
+      <div class="upload-zone" id="upload-zone"
+        onclick="document.getElementById('file-inp').click()"
+        ondragover="event.preventDefault();this.classList.add('drag')"
+        ondragleave="this.classList.remove('drag')"
+        ondrop="handleDrop(event)">
+        <input type="file" id="file-inp" accept="image/*" onchange="handleFileSelect(this.files[0])">
+        <div class="uz-icon">🍃</div>
+        <div class="uz-title">Upload Leaf Image</div>
+        <div class="uz-sub">Drag &amp; drop or click to select<br><small style="color:var(--ink3)">JPG, PNG, WEBP · Max 10MB</small></div>
+        <div class="upload-btn">Choose Image</div>
+      </div>
+
+      <div id="preview-wrap">
+        <img id="preview-img" alt="Preview">
+        <button class="predict-btn" id="predict-btn" onclick="runDiseasePredict()">
+          <span>🔬</span> Predict Disease
+        </button>
+      </div>
+
+      <!-- Recent Detections -->
+      <div class="card" style="margin-top:1.25rem">
+        <div class="section-lbl">Recent Detections</div>
+        <div id="dis-history"><div style="text-align:center;padding:1.5rem;color:var(--ink3);font-size:13px">No detections yet</div></div>
+      </div>
+
+      <!-- Model performance -->
+      <div class="card" style="margin-top:1.25rem">
+        <div class="section-lbl">Model Performance</div>
+        <div>
+          <div class="conf-row"><span class="conf-lbl" style="color:var(--ink3)">Top-1 Accuracy</span><div class="conf-bar-w"><div class="conf-bar-f high" style="width:96.4%"></div></div><span class="conf-pct">96.4%</span></div>
+          <div class="conf-row"><span class="conf-lbl" style="color:var(--ink3)">Top-5 Accuracy</span><div class="conf-bar-w"><div class="conf-bar-f high" style="width:99.1%"></div></div><span class="conf-pct">99.1%</span></div>
+          <div class="conf-row"><span class="conf-lbl" style="color:var(--ink3)">Val Loss (final)</span><div class="conf-bar-w"><div class="conf-bar-f mid" style="width:12%"></div></div><span class="conf-pct">0.12</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Result Panel -->
+    <div>
+      <div id="dis-placeholder" style="text-align:center;padding:3.5rem 1rem;color:var(--ink3)">
+        <div style="font-size:3rem;margin-bottom:1rem">🔬</div>
+        <p style="font-size:13px">Upload a leaf image and click<br><b style="color:var(--ink2)">Predict Disease</b> to see the analysis</p>
+      </div>
+
+      <div class="dis-result" id="dis-result">
+
+        <!-- Disease header -->
+        <div class="dis-header-card" id="dis-header-card">
+          <div class="dis-bigicon" id="dis-bigicon">🦠</div>
+          <div style="flex:1">
+            <div class="dis-name" id="dis-name">—</div>
+            <div class="dis-crop" id="dis-crop">—</div>
+            <div class="conf-row" style="margin-bottom:0">
+              <span class="conf-lbl" style="color:var(--ink3);font-size:11px">Confidence</span>
+              <div class="conf-bar-w"><div class="conf-bar-f" id="dis-conf-bar" style="width:0%"></div></div>
+              <span class="conf-pct" id="dis-conf-txt">—</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- XAI: Top predictions -->
+        <div class="card" style="margin-bottom:1rem">
+          <div class="section-lbl">XAI — Top Predictions</div>
+          <div id="xai-bars"></div>
+        </div>
+
+        <!-- Details grid -->
+        <div class="card" style="margin-bottom:1rem">
+          <div class="section-lbl">Disease Details & Recovery</div>
+          <div class="xai-grid" id="xai-grid">
+            <div class="xai-item"><div class="xai-lbl">Pathogen / Cause</div><div class="xai-val" id="xi-pathogen">—</div></div>
+            <div class="xai-item"><div class="xai-lbl">Recovery Time</div><div class="xai-val" id="xi-recovery">—</div></div>
+            <div class="xai-item full"><div class="xai-lbl">Treatment Recommendation</div><div class="xai-val" id="xi-treatment">—</div></div>
+            <div class="xai-item"><div class="xai-lbl">Pesticide / Fungicide</div><div class="xai-val" id="xi-pesticide">—</div></div>
+            <div class="xai-item"><div class="xai-lbl">Approx. Cost</div><div class="xai-val" id="xi-cost">—</div></div>
+          </div>
+
+          <div id="dis-alert-box"></div>
+        </div>
+
+        <!-- Confidence Distribution Chart -->
+        <div class="card">
+          <div class="section-lbl">Confidence Distribution</div>
+          <div class="chart-wrap" style="height:200px"><canvas id="confChart"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ══════ TAB 3: COST ESTIMATOR ══════ -->
+<div class="tab-content" id="tab-cost">
+<div class="page">
+
+  <div style="margin-bottom:1.5rem">
+    <h2 style="font-family:var(--serif);font-size:1.6rem;font-weight:800;margin-bottom:0.35rem">Production Cost Estimator</h2>
+    <p style="color:var(--ink3);font-size:13px">Random Forest model trained on 20,000 HP farm records. Every cost from seed to mandi commission — calibrated to 2024-25 HP prices.</p>
+  </div>
+
+  <div class="g2" style="align-items:start">
+    <!-- Form -->
+    <div style="display:flex;flex-direction:column;gap:1.1rem">
+
+      <div class="card">
+        <div class="section-lbl">Crop & Farm</div>
+        <div class="field"><label>Crop</label>
+          <select id="crop"><option value="tomato">Tomato</option><option value="capsicum">Capsicum</option><option value="potato">Potato</option><option value="pea">Pea</option><option value="apple">Apple</option><option value="maize">Maize</option><option value="wheat">Wheat</option><option value="ginger">Ginger</option><option value="garlic">Garlic</option><option value="onion">Onion</option><option value="cabbage">Cabbage</option><option value="cauliflower">Cauliflower</option></select>
+        </div>
+        <div class="field"><label>District</label>
+          <select id="district"><option>Shimla</option><option>Kullu</option><option>Mandi</option><option>Kangra</option><option>Solan</option><option>Sirmaur</option><option>Hamirpur</option><option>Una</option><option>Bilaspur</option><option>Chamba</option><option>Lahaul_Spiti</option><option>Kinnaur</option></select>
+        </div>
+        <div class="field"><label>Season</label>
+          <select id="season"><option value="kharif">Kharif</option><option value="rabi">Rabi</option><option value="zaid">Zaid</option></select>
+        </div>
+        <div class="field"><label>Soil Type</label>
+          <select id="soil"><option value="loamy">Loamy</option><option value="sandy_loam">Sandy Loam</option><option value="clay_loam">Clay Loam</option><option value="red_laterite">Red Laterite</option><option value="alluvial">Alluvial</option></select>
+        </div>
+        <div class="field"><label>Land Area (acres) <span id="area-val">1.0 ac</span></label>
+          <input type="range" id="area" min="0.25" max="8" step="0.25" value="1" oninput="sr(this,'area-val',v=>v+' ac')">
+        </div>
+        <div class="field"><label>Crop Duration (months) <span id="dur-val">5 mo</span></label>
+          <input type="range" id="duration" min="2" max="10" step="1" value="5" oninput="sr(this,'dur-val',v=>v+' mo')">
+        </div>
+        <div class="chk-row"><input type="checkbox" id="land-owned" checked><span>Own land (no rent)</span></div>
+        <div id="rent-row" class="field hidden" style="margin-top:0.5rem">
+          <label>Monthly Rent/acre (₹) <span id="rent-val">₹2,000</span></label>
+          <input type="range" id="rent" min="500" max="5000" step="100" value="2000" oninput="sr(this,'rent-val',v=>'₹'+Number(v).toLocaleString('en-IN'))">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-lbl">Seeds & Labour</div>
+        <div class="field"><label>Seed Packets <span id="seed-hint">₹120/pkt</span></label>
+          <div style="display:flex;align-items:center;gap:10px"><input type="range" id="seed-pkts" min="1" max="50" step="1" value="5" oninput="sr(this,'seed-pkt-v',v=>v+' pkts')" style="flex:1"><span style="font-family:var(--mono);font-size:11px;color:var(--green);min-width:54px;text-align:right" id="seed-pkt-v">5 pkts</span></div>
+        </div>
+        <div class="field"><label>Hired Workers <span id="labor-val">3</span></label>
+          <input type="range" id="labor" min="0" max="15" step="1" value="3" oninput="sr(this,'labor-val',v=>v)">
+        </div>
+        <div class="field"><label>Daily Wage (₹/person) <span id="wage-val">₹350</span></label>
+          <input type="range" id="wage" min="200" max="600" step="10" value="350" oninput="sr(this,'wage-val',v=>'₹'+v)">
+        </div>
+        <div class="field"><label>Self Labour (hrs/day) <span id="self-val">3 hrs</span></label>
+          <input type="range" id="self-hrs" min="0" max="10" step="0.5" value="3" oninput="sr(this,'self-val',v=>v+' hrs')">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-lbl">Water & Inputs</div>
+        <div class="field"><label>Irrigation Type</label>
+          <select id="irrigation"><option value="drip">Drip (₹8–25/hr)</option><option value="borewell">Borewell (₹40–100/hr)</option><option value="canal">Canal (₹15–45/hr)</option><option value="tank_pond">Tank/Pond (₹20–60/hr)</option><option value="rain_fed">Rain-fed (free)</option></select>
+        </div>
+        <div class="field"><label>Water Hours/day <span id="water-val">4 hrs</span></label>
+          <input type="range" id="water-hrs" min="0" max="12" step="0.5" value="4" oninput="sr(this,'water-val',v=>v+' hrs')">
+        </div>
+        <div class="field"><label>Fertilizer Bags <span id="fert-val">5 bags</span></label>
+          <input type="range" id="fert-bags" min="0" max="40" step="1" value="5" oninput="sr(this,'fert-val',v=>v+' bags')">
+        </div>
+        <div class="chk-row"><input type="checkbox" id="organic"><span>Organic fertilizer (+₹3k–15k/acre)</span></div>
+        <div class="field" style="margin-top:0.5rem"><label>Pesticide Sprays <span id="pest-val">4 sprays</span></label>
+          <input type="range" id="pest-sprays" min="0" max="20" step="1" value="4" oninput="sr(this,'pest-val',v=>v+' sprays')">
+        </div>
+        <div class="field"><label>Tractor Mode</label>
+          <select id="tractor-mode"><option value="rented">Rented (₹400–700/hr)</option><option value="owned">Owned (₹150–250/hr)</option><option value="bullock">Bullock (₹120–200/hr)</option><option value="none">None</option></select>
+        </div>
+        <div class="field"><label>Tractor Hours <span id="tractor-val">8 hrs</span></label>
+          <input type="range" id="tractor-hrs" min="0" max="50" step="1" value="8" oninput="sr(this,'tractor-val',v=>v+' hrs')">
+        </div>
+        <div class="field"><label>Subsidy Scheme</label>
+          <select id="subsidy"><option value="none">None</option><option value="PM_KISAN">PM-KISAN (₹2,000)</option><option value="RKVY">RKVY (₹5k–25k)</option><option value="NHM">NHM (₹8k–40k)</option><option value="PMKSY">PMKSY (₹4k–20k)</option></select>
+        </div>
+        <div class="chk-row"><input type="checkbox" id="insurance"><span>Crop insurance</span></div>
+        <button class="calc-btn" onclick="calcCost()" id="calc-btn">
+          <span>💰</span> Calculate Production Cost
+        </button>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div>
+      <div id="cost-placeholder" style="text-align:center;padding:4rem 1rem;color:var(--ink3)">
+        <div style="font-size:3rem;margin-bottom:1rem">💰</div>
+        <p style="font-size:13px">Fill the form and click<br><b style="color:var(--ink2)">Calculate Production Cost</b></p>
+      </div>
+
+      <div id="cost-result" class="hidden">
+        <div class="card" style="margin-bottom:1.1rem">
+          <div class="result-hero">
+            <div class="rh-lbl">Estimated Total Production Cost</div>
+            <div class="rh-amt" id="rh-amt">₹0</div>
+            <div class="rh-sub" id="rh-sub">—</div>
+          </div>
+          <div class="metric-row">
+            <div class="metric"><div class="ml">Per Acre</div><div class="mv a" id="mv-acre">—</div></div>
+            <div class="metric"><div class="ml">Per Month</div><div class="mv" id="mv-month">—</div></div>
+            <div class="metric"><div class="ml">Est. Revenue</div><div class="mv g" id="mv-rev">—</div></div>
+          </div>
+          <div id="cost-breakdown"></div>
+          <div id="cost-tips"></div>
+        </div>
+
+        <div class="card" style="margin-bottom:1.1rem">
+          <div class="section-lbl">Cost Breakdown</div>
+          <div class="chart-wrap" style="height:260px"><canvas id="costDonut"></canvas></div>
+        </div>
+
+        <div class="card" style="margin-bottom:1.1rem">
+          <div class="section-lbl">Monthly Cash Outflow</div>
+          <div class="chart-wrap" style="height:200px"><canvas id="cashflowChart"></canvas></div>
+        </div>
+
+        <div class="card">
+          <div class="section-lbl">Benchmark vs Other Crops (₹/acre)</div>
+          <div class="chart-wrap"><canvas id="benchChart"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ══════ TAB 4: ABOUT ══════ -->
+<div class="tab-content" id="tab-about">
+<div class="page">
+
+  <div class="about-hero">
+    <div class="badge live" style="justify-content:center"><span class="status-dot"></span>Open Source · MIT License</div>
+    <h1>HP AgriSmart Platform</h1>
+    <p>Integrated AI for Himachal Pradesh farmers — ResNet9 disease detection with XAI + Random Forest cost estimation, built for every HP district and crop.</p>
+  </div>
+
+  <div class="g2" style="margin-bottom:1.5rem">
+    <div>
+      <div class="mc-header"><h3>🔬 ResNet9 Disease Model</h3><p>Deep learning · 38 classes · PlantVillage dataset</p></div>
+      <div class="mc-body">
+        <div class="mc-stat-row">
+          <div class="mc-stat"><div class="sn">96.4%</div><div class="sl">Accuracy</div></div>
+          <div class="mc-stat"><div class="sn">87K</div><div class="sl">Images</div></div>
+          <div class="mc-stat"><div class="sn">38</div><div class="sl">Classes</div></div>
+        </div>
+        <div class="section-lbl">Architecture</div>
+        <ul class="feature-list">
+          <li>ResNet9 with skip connections (residual blocks)</li>
+          <li>Batch Normalization + MaxPool2d layers</li>
+          <li>OneCycleLR scheduler · Adam (lr=0.01)</li>
+          <li>Input: 256×256 RGB leaf images</li>
+          <li>Softmax output: 38-class confidence scores</li>
+          <li>XAI: Top-5 class probabilities returned</li>
+        </ul>
+        <div style="margin-top:1rem"><span class="tech-tag">PyTorch</span><span class="tech-tag">torchvision</span><span class="tech-tag">PIL</span><span class="tech-tag">FastAPI</span></div>
+      </div>
+    </div>
+    <div>
+      <div class="mc-header"><h3>💰 Random Forest Cost Model</h3><p>Ensemble ML · HP 2024-25 · 20,000 records · R²≈0.97</p></div>
+      <div class="mc-body">
+        <div class="mc-stat-row">
+          <div class="mc-stat"><div class="sn">R²≈0.97</div><div class="sl">Score</div></div>
+          <div class="mc-stat"><div class="sn">20K</div><div class="sl">Records</div></div>
+          <div class="mc-stat"><div class="sn">40+</div><div class="sl">Features</div></div>
+        </div>
+        <div class="section-lbl">What it covers</div>
+        <ul class="feature-list">
+          <li>Seed packets + crop-specific per-packet pricing</li>
+          <li>Labour: hired workers × daily wages × self labour</li>
+          <li>Irrigation type × hours/day × seasonal cost</li>
+          <li>Fertilizer + organic add-on costs</li>
+          <li>Pesticide sprays + insecticide + spray labour</li>
+          <li>Tractor (owned/rented/bullock) per-hour rates</li>
+          <li>Harvest, storage, transport, mandi commission</li>
+          <li>Altitude factor per district + subsidy deduction</li>
+        </ul>
+        <div style="margin-top:1rem"><span class="tech-tag">scikit-learn</span><span class="tech-tag">pandas</span><span class="tech-tag">joblib</span><span class="tech-tag">FastAPI</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:1.5rem">
+    <div class="section-lbl">How It Works</div>
+    <div class="flow-step"><div class="flow-num">1</div><div class="flow-body"><h4>Image Upload</h4><p>Farmer uploads a leaf photo. Frontend sends base64 image to FastAPI /disease/predict endpoint.</p></div></div>
+    <div class="flow-step"><div class="flow-num">2</div><div class="flow-body"><h4>ResNet9 Inference</h4><p>Model preprocesses to 256×256 RGB, runs forward pass, returns top-5 class probabilities as XAI confidence scores.</p></div></div>
+    <div class="flow-step"><div class="flow-num">3</div><div class="flow-body"><h4>Recommendation Engine</h4><p>Backend maps predicted class to disease metadata: pathogen, recovery time, pesticide name, approx cost per spray.</p></div></div>
+    <div class="flow-step"><div class="flow-num">4</div><div class="flow-body"><h4>Cost Estimation</h4><p>Farm parameters sent to /cost/predict. Random Forest (300 trees) predicts total production cost with itemized breakdown.</p></div></div>
+    <div class="flow-step"><div class="flow-num">5</div><div class="flow-body"><h4>Charts & Insights</h4><p>Frontend renders XAI confidence bars, cost donut, monthly cashflow, and crop benchmark charts via Chart.js.</p></div></div>
+  </div>
+
+  <div class="g3">
+    <div class="card"><div class="section-lbl">Districts Covered</div><div style="display:flex;flex-wrap:wrap;gap:5px"><span class="tech-tag">Shimla</span><span class="tech-tag">Kullu</span><span class="tech-tag">Mandi</span><span class="tech-tag">Kangra</span><span class="tech-tag">Solan</span><span class="tech-tag">Sirmaur</span><span class="tech-tag">Hamirpur</span><span class="tech-tag">Una</span><span class="tech-tag">Bilaspur</span><span class="tech-tag">Chamba</span><span class="tech-tag">Lahaul Spiti</span><span class="tech-tag">Kinnaur</span></div></div>
+    <div class="card"><div class="section-lbl">Backend API (FastAPI)</div>
+      <div style="font-size:12px;color:var(--ink3);line-height:1.9">
+        <div><b>POST</b> <code>/disease/predict</code> — Image classification + XAI</div>
+        <div><b>POST</b> <code>/cost/predict</code> — Cost estimation + breakdown</div>
+        <div><b>GET</b> <code>/health</code> — System status check</div>
+        <div style="margin-top:6px;font-size:11px;color:var(--ink3)">Base URL: <code>https://civillianff-agridx-ai.hf.space</code></div>
+      </div>
+    </div>
+    <div class="card"><div class="section-lbl">Accuracy Disclaimer</div><p style="font-size:12px;color:var(--ink3);line-height:1.7">Estimates carry ±15–20% variance. Consult your local <b>Krishi Vigyan Kendra (KVK)</b> for official advice. Use clear, well-lit, close-up leaf images for best disease detection results.</p></div>
+  </div>
+
+</div>
+</div>
+
+<!-- ══════ TAB 5: AI AGENTS ══════ -->
+<div class="tab-content" id="tab-agents">
+<div class="page">
+
+  <div class="agent-hero">
+    <div>
+      <div class="badge live"><span class="status-dot"></span>Multi-Agent Intelligence</div>
+      <h1>12-Agent Agentic AI<br>Orchestration Pipeline</h1>
+      <p>LangGraph-powered multi-agent system with dependency-aware scheduling, failure isolation, and real-time event propagation across all hazard domains.</p>
+      <div class="agent-hero-stats">
+        <div class="ahs"><div class="ahs-num">12</div><div class="ahs-lbl">Agents</div></div>
+        <div class="ahs"><div class="ahs-num">11</div><div class="ahs-lbl">Pipeline Stages</div></div>
+        <div class="ahs"><div class="ahs-num">15m</div><div class="ahs-lbl">Cycle Timeout</div></div>
+        <div class="ahs"><div class="ahs-num">3</div><div class="ahs-lbl">Hazard Types</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pipeline Controls -->
+  <div class="pipeline-controls">
+    <button class="run-pipeline-btn" id="run-pipeline-btn" onclick="runAgentPipeline()">
+      <span>▶</span> Run Orchestration Cycle
+    </button>
+    <button class="run-pipeline-btn" style="background:linear-gradient(135deg,var(--ink2),var(--ink3))" onclick="resetPipeline()">
+      ↺ Reset
+    </button>
+    <span class="pipeline-status" id="pipeline-status">IDLE — Click ▶ to simulate a full 11-stage pipeline run</span>
+  </div>
+
+  <!-- Pipeline Summary -->
+  <div class="pipeline-summary" id="pipeline-summary">
+    <div class="section-lbl">Orchestration Cycle Summary</div>
+    <div class="ps-row">
+      <div class="ps-stat"><div class="ps-num g" id="ps-completed">0</div><div class="ps-lbl">Completed</div></div>
+      <div class="ps-stat"><div class="ps-num r" id="ps-failed">0</div><div class="ps-lbl">Failed</div></div>
+      <div class="ps-stat"><div class="ps-num a" id="ps-skipped">0</div><div class="ps-lbl">Skipped</div></div>
+      <div class="ps-stat"><div class="ps-num" id="ps-time" style="color:var(--blue)">0s</div><div class="ps-lbl">Total Time</div></div>
+    </div>
+  </div>
+
+  <!-- Agent Cards Grid -->
+  <div class="section-lbl">Agent Pipeline (Dependency Order)</div>
+  <div class="pipeline-grid" id="pipeline-grid"></div>
+
+  <!-- Agent Detail Panel -->
+  <div class="agent-detail-panel" id="agent-detail-panel">
+    <div class="adp-title" id="adp-title"></div>
+    <p id="adp-desc" style="font-size:12.5px;color:var(--ink3);line-height:1.6;margin-bottom:1rem"></p>
+    <div class="adp-meta" id="adp-meta"></div>
+  </div>
+
+  <div class="g2" style="margin-top:1.5rem;align-items:start">
+    <!-- LangGraph Orchestrator Visualization -->
+    <div class="card">
+      <div class="section-lbl">LangGraph State Machine (Orchestrator Agent)</div>
+      <p style="font-size:12px;color:var(--ink3);margin-bottom:1rem">Each user query flows through 6 nodes in the orchestrator's compiled StateGraph. Click "Run Demo" in the chat below to see it animate.</p>
+      <div class="langgraph-flow" id="langgraph-flow">
+        <div class="lg-node" data-lg="understand_intent">🧠 Understand Intent</div>
+        <span class="lg-arrow">→</span>
+        <div class="lg-node" data-lg="plan_tasks">📋 Plan Tasks</div>
+        <span class="lg-arrow">→</span>
+        <div class="lg-node" data-lg="call_tools">🔧 Call Tools</div>
+        <span class="lg-arrow">→</span>
+        <div class="lg-node" data-lg="aggregate">✅ Aggregate</div>
+        <span class="lg-arrow">→</span>
+        <div class="lg-node" data-lg="generate">💬 Generate</div>
+        <span class="lg-arrow">→</span>
+        <div class="lg-node" data-lg="finalize">📝 Finalize</div>
+      </div>
+      <div class="card" style="background:var(--bg);border:1px solid var(--border);margin-top:0.5rem">
+        <div style="font-size:11px;color:var(--ink3);line-height:1.7">
+          <strong>Available Tools:</strong><br>
+          <code style="font-size:10px">weather_tool</code> · <code style="font-size:10px">prediction_tool</code> · <code style="font-size:10px">alert_tool</code> · <code style="font-size:10px">digital_twin_tool</code> · <code style="font-size:10px">data_tool</code> · <code style="font-size:10px">rag_tool</code> · <code style="font-size:10px">notification_tool</code>
+        </div>
+      </div>
+    </div>
+
+    <!-- Agent Timing Chart -->
+    <div class="card">
+      <div class="section-lbl">Agent Execution Timing (Last Cycle)</div>
+      <div class="chart-wrap" style="height:280px"><canvas id="agentTimingChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Agent Chat Demo -->
+  <div class="agent-chat">
+    <div class="agent-chat-header">🤖 Orchestrator Agent Chat — Live Demo</div>
+    <div class="agent-chat-body" id="agent-chat-body">
+      <div class="acm system">Hi! I'm the Orchestrator Agent. Ask me about weather, predictions, alerts, or any hazard in Himachal Pradesh. I'll show you how I route your query through the multi-agent pipeline.</div>
+    </div>
+    <div class="agent-chat-input">
+      <input type="text" id="agent-chat-input" placeholder="Try: What is the flood risk in Mandi district?" onkeydown="if(event.key==='Enter')sendAgentChat()">
+      <button onclick="sendAgentChat()">Send →</button>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ══════ TAB 6: RAG ENGINE ══════ -->
+<div class="tab-content" id="tab-rag">
+<div class="page">
+
+  <div class="rag-hero">
+    <div>
+      <div class="badge live"><span class="status-dot"></span>Hybrid Retrieval Active</div>
+      <h1>Research Paper<br>RAG Pipeline</h1>
+      <p>Hybrid retrieval engine combining FAISS dense vectors + BM25 sparse matching, fused via Reciprocal Rank Fusion, then reranked with a Cross-Encoder for maximum precision.</p>
+      <div class="rag-hero-badges">
+        <span class="rag-badge">FAISS Vector Search</span>
+        <span class="rag-badge">BM25 Sparse</span>
+        <span class="rag-badge">RRF Fusion</span>
+        <span class="rag-badge">Cross-Encoder Rerank</span>
+        <span class="rag-badge">Groq LLM</span>
+        <span class="rag-badge">Conversation Memory</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- RAG Pipeline Visualization -->
+  <div class="section-lbl">Pipeline Stages</div>
+  <div class="rag-pipeline" id="rag-pipeline">
+    <div class="rag-stage" data-rag="load"><div class="rag-stage-icon">📄</div><div class="rag-stage-name">Load PDFs</div><div class="rag-stage-val">PyMuPDF</div></div>
+    <span class="rag-arrow">→</span>
+    <div class="rag-stage" data-rag="clean"><div class="rag-stage-icon">🧹</div><div class="rag-stage-name">Clean</div><div class="rag-stage-val">Headers/footers</div></div>
+    <span class="rag-arrow">→</span>
+    <div class="rag-stage" data-rag="chunk"><div class="rag-stage-icon">✂️</div><div class="rag-stage-name">Chunk</div><div class="rag-stage-val" id="rv-chunk">1000 / 200</div></div>
+    <span class="rag-arrow">→</span>
+    <div class="rag-stage" data-rag="embed"><div class="rag-stage-icon">🧬</div><div class="rag-stage-name">Embed</div><div class="rag-stage-val">MiniLM-L6-v2</div></div>
+    <span class="rag-arrow">→</span>
+    <div class="rag-stage" data-rag="index"><div class="rag-stage-icon">🗂️</div><div class="rag-stage-name">FAISS+BM25</div><div class="rag-stage-val">Dual Index</div></div>
+    <span class="rag-arrow">→</span>
+    <div class="rag-stage" data-rag="rrf"><div class="rag-stage-icon">🔀</div><div class="rag-stage-name">RRF Fusion</div><div class="rag-stage-val" id="rv-rrf">k=60</div></div>
+    <span class="rag-arrow">→</span>
+    <div class="rag-stage" data-rag="rerank"><div class="rag-stage-icon">🎯</div><div class="rag-stage-name">Cross-Encoder</div><div class="rag-stage-val" id="rv-topk">top_k=4</div></div>
+    <span class="rag-arrow">→</span>
+    <div class="rag-stage" data-rag="llm"><div class="rag-stage-icon">💬</div><div class="rag-stage-name">Groq LLM</div><div class="rag-stage-val">GPT-oss-120b</div></div>
+  </div>
+
+  <!-- Config Dashboard -->
+  <div class="section-lbl">Configuration (from RAG/config.py)</div>
+  <div class="rag-config-grid">
+    <div class="rag-config-item"><div class="rci-lbl">Chunk Size <span id="rag-chunk-val">1000</span></div><input type="range" id="rag-chunk-size" min="200" max="2000" value="1000" step="100" oninput="updateRAGConfig()"></div>
+    <div class="rag-config-item"><div class="rci-lbl">Chunk Overlap <span id="rag-overlap-val">200</span></div><input type="range" id="rag-overlap" min="50" max="500" value="200" step="50" oninput="updateRAGConfig()"></div>
+    <div class="rag-config-item"><div class="rci-lbl">Top K (to LLM) <span id="rag-topk-val">4</span></div><input type="range" id="rag-topk" min="2" max="10" value="4" step="1" oninput="updateRAGConfig()"></div>
+    <div class="rag-config-item"><div class="rci-lbl">RRF Damping (k) <span id="rag-rrf-val">60</span></div><input type="range" id="rag-rrf-k" min="10" max="100" value="60" step="5" oninput="updateRAGConfig()"></div>
+    <div class="rag-config-item"><div class="rci-lbl">Similarity Threshold <span id="rag-sim-val">0.35</span></div><input type="range" id="rag-sim" min="0.1" max="0.9" value="0.35" step="0.05" oninput="updateRAGConfig()"></div>
+    <div class="rag-config-item"><div class="rci-lbl">LLM Temperature <span id="rag-temp-val">0.2</span></div><input type="range" id="rag-temp" min="0" max="1" value="0.2" step="0.1" oninput="updateRAGConfig()"></div>
+  </div>
+
+  <!-- Interactive RAG Demo -->
+  <div class="rag-demo">
+    <div class="rag-demo-header">📚 Interactive RAG Pipeline Demo — Watch retrieval happen step-by-step</div>
+    <div class="rag-demo-input">
+      <input type="text" id="rag-query-input" placeholder="Try: How do cloudbursts form in the Himalayan region?" onkeydown="if(event.key==='Enter')runRAGDemo()">
+      <button onclick="runRAGDemo()">🔍 Run Pipeline</button>
+    </div>
+    <div class="rag-demo-body" id="rag-demo-body">
+      <div style="text-align:center;padding:2.5rem;color:var(--ink3);font-size:13px">
+        <div style="font-size:2.5rem;margin-bottom:0.8rem">📚</div>
+        Type a question above and click <b>Run Pipeline</b> to watch<br>the full RAG retrieval process animate step-by-step.
+      </div>
+    </div>
+  </div>
+
+  <!-- 4-Column Retrieval Breakdown -->
+  <div class="section-lbl">Retrieval Stage Comparison (Last Query)</div>
+  <div class="rag-breakdown" id="rag-breakdown">
+    <div class="rb-col"><div class="rb-title faiss">🔴 FAISS (Dense)</div><div class="rb-items" id="rb-faiss"><div style="font-size:11px;color:var(--ink3);padding:8px 0">Run a query to see results</div></div></div>
+    <div class="rb-col"><div class="rb-title bm25">🔵 BM25 (Sparse)</div><div class="rb-items" id="rb-bm25"><div style="font-size:11px;color:var(--ink3);padding:8px 0">Run a query to see results</div></div></div>
+    <div class="rb-col"><div class="rb-title rrf">🟡 RRF Fusion</div><div class="rb-items" id="rb-rrf"><div style="font-size:11px;color:var(--ink3);padding:8px 0">Run a query to see results</div></div></div>
+    <div class="rb-col"><div class="rb-title ce">🟢 Cross-Encoder</div><div class="rb-items" id="rb-ce"><div style="font-size:11px;color:var(--ink3);padding:8px 0">Run a query to see results</div></div></div>
+  </div>
+
+  <!-- RAG Architecture Explanation -->
+  <div class="card" style="margin-top:1.5rem">
+    <div class="section-lbl">How the Hybrid RAG Pipeline Works</div>
+    <div class="flow-step"><div class="flow-num">1</div><div class="flow-body"><h4>Query Rewriting</h4><p>ConversationMemory provides chat history. QueryRewriter (Groq LLM) resolves pronouns and context: "it" → "the cloudburst formation process in the Himalayan region".</p></div></div>
+    <div class="flow-step"><div class="flow-num">2</div><div class="flow-body"><h4>Dual Retrieval — FAISS + BM25</h4><p>FAISS searches the MiniLM-L6-v2 embedding space (semantic similarity). BM25 does exact keyword matching over the same chunks. Both return a candidate pool (default 10 each).</p></div></div>
+    <div class="flow-step"><div class="flow-num">3</div><div class="flow-body"><h4>Reciprocal Rank Fusion (RRF)</h4><p>Merges FAISS and BM25 results using RRF formula: score = Σ 1/(k + rank). This combines the strengths of both semantic and lexical matching. k=60 by default.</p></div></div>
+    <div class="flow-step"><div class="flow-num">4</div><div class="flow-body"><h4>Cross-Encoder Reranking</h4><p>Top RRF candidates are scored by a Cross-Encoder (query-document pair scoring). This is more accurate than bi-encoders because it sees both texts simultaneously. Only top_k (4) survive.</p></div></div>
+    <div class="flow-step"><div class="flow-num">5</div><div class="flow-body"><h4>LLM Answer Generation</h4><p>RAGPrompt assembles the final context from top_k chunks + conversation history + original question. Groq generates a grounded answer with source citations.</p></div></div>
+  </div>
+
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     JAVASCRIPT
+════════════════════════════════════════════════════════ -->
+<script>
+const API = 'https://civillianff-agridx-ai.hf.space';
+// ── Disease metadata for frontend display ──────────────────
+// Maps class names (as returned by model) to recommendation data
+const DISEASE_META = {
+  // Tomato
+  "Tomato___Early_blight":         {pathogen:"Alternaria solani",recovery:"3–5 weeks",tx:"Remove infected lower leaves. Apply Mancozeb (0.25%) or Chlorothalonil spray. Avoid overhead irrigation. Rotate crops next season.",pesticide:"Mancozeb 75WP / Chlorothalonil",cost:"₹180–350/spray"},
+  "Tomato___Late_blight":          {pathogen:"Phytophthora infestans",recovery:"2–4 weeks",tx:"Apply Metalaxyl + Mancozeb immediately. Remove and destroy infected plants. Improve field drainage. Avoid wet canopy.",pesticide:"Metalaxyl + Mancozeb (Ridomil Gold)",cost:"₹250–450/spray"},
+  "Tomato___Leaf_Mold":            {pathogen:"Passalora fulva",recovery:"3–5 weeks",tx:"Improve ventilation in greenhouse. Apply Mancozeb or copper hydroxide. Reduce humidity and avoid leaf wetness.",pesticide:"Mancozeb / Copper Hydroxide",cost:"₹180–300/spray"},
+  "Tomato___Septoria_leaf_spot":   {pathogen:"Septoria lycopersici",recovery:"4–6 weeks",tx:"Remove lower infected leaves. Apply chlorothalonil or copper fungicide every 7–10 days. Avoid overhead watering.",pesticide:"Chlorothalonil / Copper Fungicide",cost:"₹200–380/spray"},
+  "Tomato___Spider_mites Two-spotted_spider_mite":{pathogen:"Tetranychus urticae",recovery:"2–3 weeks",tx:"Apply Abamectin or Spiromesifen. Use neem oil spray weekly. Maintain adequate soil moisture.",pesticide:"Abamectin / Spiromesifen",cost:"₹280–500/spray"},
+  "Tomato___Target_Spot":          {pathogen:"Corynespora cassiicola",recovery:"3–5 weeks",tx:"Apply azoxystrobin or tebuconazole. Remove heavily infected leaves. Improve air circulation.",pesticide:"Azoxystrobin / Tebuconazole",cost:"₹300–550/spray"},
+  "Tomato___Tomato_Yellow_Leaf_Curl_Virus":{pathogen:"TYLCV (Begomovirus, whitefly vector)",recovery:"4–8 weeks (vector control)",tx:"Control whitefly with Imidacloprid. Remove and destroy infected plants. Use virus-resistant varieties next cycle.",pesticide:"Imidacloprid (Confidor)",cost:"₹220–400/spray"},
+  "Tomato___Tomato_mosaic_virus":  {pathogen:"ToMV (Tobamovirus)",recovery:"No cure — remove plants",tx:"Remove and destroy infected plants. Disinfect tools with bleach. Use resistant varieties. Control aphids.",pesticide:"No direct pesticide — vector control",cost:"₹150–250/spray (aphicide)"},
+  "Tomato___healthy":              {pathogen:"—",recovery:"N/A",tx:"Plant is healthy. Continue regular monitoring, balanced fertilization, and preventive weekly inspection.",pesticide:"None required",cost:"—"},
+  // Potato
+  "Potato___Early_blight":         {pathogen:"Alternaria solani",recovery:"3–4 weeks",tx:"Apply Mancozeb or Chlorothalonil. Ensure proper spacing for air circulation. Remove infected foliage.",pesticide:"Mancozeb 75WP",cost:"₹180–320/spray"},
+  "Potato___Late_blight":          {pathogen:"Phytophthora infestans",recovery:"2–3 weeks",tx:"Apply Metalaxyl + Mancozeb immediately. Earth up around plants. Destroy infected haulm before harvest.",pesticide:"Metalaxyl + Mancozeb / Cymoxanil",cost:"₹250–480/spray"},
+  "Potato___healthy":              {pathogen:"—",recovery:"N/A",tx:"Healthy potato crop. Maintain hill-up, balanced NPK, and monitor for aphids and blight weekly.",pesticide:"None required",cost:"—"},
+  // Apple
+  "Apple___Apple_scab":            {pathogen:"Venturia inaequalis",recovery:"4–6 weeks",tx:"Apply Captan or Myclobutanil at bud break and after rain. Prune to improve air circulation. Remove fallen leaves.",pesticide:"Captan 50WP / Myclobutanil",cost:"₹320–600/spray"},
+  "Apple___Black_rot":             {pathogen:"Botryosphaeria obtusa",recovery:"4–8 weeks",tx:"Prune infected branches 15cm below visible infection. Apply copper fungicide. Remove mummified fruit.",pesticide:"Copper Hydroxide / Thiophanate-methyl",cost:"₹280–520/spray"},
+  "Apple___Cedar_apple_rust":      {pathogen:"Gymnosporangium juniperi-virginianae",recovery:"4–6 weeks",tx:"Apply myclobutanil or propiconazole during pink to petal-fall stage. Remove nearby juniper hosts.",pesticide:"Myclobutanil / Propiconazole",cost:"₹300–550/spray"},
+  "Apple___healthy":               {pathogen:"—",recovery:"N/A",tx:"Apple tree is healthy. Continue dormant sprays, thinning, and standard HP orchard management practices.",pesticide:"None required",cost:"—"},
+  // Capsicum / Pepper
+  "Pepper,_bell___Bacterial_spot": {pathogen:"Xanthomonas campestris",recovery:"3–5 weeks",tx:"Apply copper-based bactericide. Avoid wet foliage. Use disease-resistant varieties. Destroy infected plant debris.",pesticide:"Copper Hydroxide / Streptomycin",cost:"₹220–420/spray"},
+  "Pepper,_bell___healthy":        {pathogen:"—",recovery:"N/A",tx:"Capsicum is healthy. Maintain proper spacing, balanced fertilization, and weekly monitoring.",pesticide:"None required",cost:"—"},
+  // Grape
+  "Grape___Black_rot":             {pathogen:"Guignardia bidwellii",recovery:"4–6 weeks",tx:"Apply Myclobutanil from bud break. Remove all mummified berries and infected canes. Improve canopy airflow.",pesticide:"Myclobutanil / Mancozeb",cost:"₹280–480/spray"},
+  "Grape___Esca_(Black_Measles)":  {pathogen:"Phaeomoniella chlamydospora complex",recovery:"Chronic — slow management",tx:"No cure. Prune infected wood. Use trunk injection with phosphonate. Avoid water stress.",pesticide:"Phosphonate trunk injection",cost:"₹500–900/tree"},
+  "Grape___Leaf_blight_(Isariopsis_Leaf_Spot)":{pathogen:"Isariopsis clavispora",recovery:"3–5 weeks",tx:"Apply Mancozeb or Bordeaux mixture. Remove infected leaves. Improve vine spacing.",pesticide:"Mancozeb / Bordeaux Mixture",cost:"₹200–380/spray"},
+  "Grape___healthy":               {pathogen:"—",recovery:"N/A",tx:"Vine is healthy. Maintain standard pruning, trellising, and preventive dormant spray schedule.",pesticide:"None required",cost:"—"},
+};
+
+// Fallback for unknown classes
+function getDiseaseInfo(className){
+  if(DISEASE_META[className]) return DISEASE_META[className];
+  const isHealthy = className.toLowerCase().includes('healthy');
+  return isHealthy
+    ? {pathogen:"—",recovery:"N/A",tx:"Plant appears healthy. Continue regular monitoring.",pesticide:"None required",cost:"—"}
+    : {pathogen:"Unknown pathogen",recovery:"Consult KVK",tx:"Take the plant to your nearest Krishi Vigyan Kendra for expert diagnosis.",pesticide:"Consult expert",cost:"Variable"};
+}
+
+// ── Tab switching ──────────────────────────────────────────
+function switchTab(id, btn){
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('tab-'+id).classList.add('active');
+  btn.classList.add('active');
+}
+
+// ── Slider helpers ─────────────────────────────────────────
+function sr(el, outId, fmt){
+  document.getElementById(outId).textContent = fmt(el.value);
+  const pct = (el.value-el.min)/(el.max-el.min)*100;
+  el.style.setProperty('--v', pct+'%');
+}
+function sv(id){ return parseFloat(document.getElementById(id).value); }
+function sel(id){ return document.getElementById(id).value; }
+
+// Init sliders
+window.addEventListener('DOMContentLoaded', () => {
+  ['area','duration','rent','seed-pkts','labor','wage','self-hrs','water-hrs','fert-bags','pest-sprays','tractor-hrs'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el){ const pct=(el.value-el.min)/(el.max-el.min)*100; el.style.setProperty('--v',pct+'%'); }
+  });
+  const SEED_P={tomato:120,capsicum:150,potato:800,pea:90,apple:80,maize:180,wheat:25,ginger:60,garlic:70,onion:100,cabbage:80,cauliflower:90};
+  function updateSeedHint(){ document.getElementById('seed-hint').textContent='₹'+SEED_P[sel('crop')]+'/pkt'; }
+  updateSeedHint();
+  document.getElementById('crop').addEventListener('change', updateSeedHint);
+  document.getElementById('land-owned').addEventListener('change', function(){
+    document.getElementById('rent-row').classList.toggle('hidden', this.checked);
+  });
+  initDashCharts();
+});
+
+// ══════════════════════════════════════════════════════════
+// DASHBOARD CHARTS
+// ══════════════════════════════════════════════════════════
+function initDashCharts(){
+  new Chart(document.getElementById('priceChart'),{
+    type:'line',
+    data:{
+      labels:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
+      datasets:[
+        {label:'Tomato',data:[1200,1150,1300,1680,1750,1600,1450,1580,1680,1720,1650,1400],borderColor:'#e05a30',backgroundColor:'rgba(224,90,48,0.07)',tension:0.4,pointRadius:2,fill:true},
+        {label:'Apple',data:[3200,3400,3600,4000,4200,4500,4800,5000,4850,4600,4200,3800],borderColor:'#c07d20',backgroundColor:'rgba(192,125,32,0.05)',tension:0.4,pointRadius:2,fill:true},
+        {label:'Ginger',data:[2200,2400,2600,2800,3000,3100,3200,3200,3200,3000,2800,2500],borderColor:'#2e7d46',backgroundColor:'rgba(46,125,70,0.05)',tension:0.4,pointRadius:2,fill:true},
+      ]
+    },
+    options:{responsive:true,maintainAspectRatio:false,scales:{y:{ticks:{callback:v=>'₹'+v,font:{size:10},color:'#4a5548'},grid:{color:'rgba(0,0,0,0.04)'}},x:{ticks:{font:{size:10},color:'#4a5548'},grid:{display:false}}},plugins:{legend:{labels:{font:{size:11},boxWidth:10}}}}
+  });
+  new Chart(document.getElementById('costChart'),{
+    type:'bar',
+    data:{
+      labels:['Tomato','Capsicum','Potato','Pea','Apple','Maize','Wheat','Ginger'],
+      datasets:[{label:'₹/acre',data:[148000,162000,155000,110000,195000,88000,72000,175000],backgroundColor:['#2e7d46','#3d9a56','#1d5f96','#c07d20','#c49a28','#b33030','#4a5548','#2e7d46'],borderRadius:4}]
+    },
+    options:{responsive:true,maintainAspectRatio:false,scales:{y:{ticks:{callback:v=>'₹'+(v/1000)+'k',font:{size:10},color:'#4a5548'},grid:{color:'rgba(0,0,0,0.04)'}},x:{ticks:{font:{size:9},color:'#4a5548'},grid:{display:false}}},plugins:{legend:{display:false}}}
+  });
+  new Chart(document.getElementById('distChart'),{
+    type:'bar',
+    data:{
+      labels:['Shimla','Kullu','Solan','Mandi','Kangra','Sirmaur','Una','Bilaspur','Hamirpur','Chamba'],
+      datasets:[{label:'ROI %',data:[42,38,45,35,38,28,32,30,33,22],backgroundColor:'rgba(46,125,70,0.75)',borderRadius:4}]
+    },
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,scales:{x:{ticks:{callback:v=>v+'%',font:{size:10}},grid:{color:'rgba(0,0,0,0.04)'}},y:{ticks:{font:{size:10}},grid:{display:false}}},plugins:{legend:{display:false}}}
+  });
+}
+
+// ══════════════════════════════════════════════════════════
+// DISEASE DETECTION — Real Backend
+// ══════════════════════════════════════════════════════════
+let selectedFile = null;
+let confChartInst = null;
+let detectionHistory = [];
+
+function handleDrop(e){
+  e.preventDefault();
+  document.getElementById('upload-zone').classList.remove('drag');
+  const file = e.dataTransfer.files[0];
+  if(file) handleFileSelect(file);
+}
+
+function handleFileSelect(file){
+  if(!file) return;
+  selectedFile = file;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = document.getElementById('preview-img');
+    img.src = e.target.result;
+    document.getElementById('preview-wrap').style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+}
+
+async function runDiseasePredict(){
+  if(!selectedFile){ alert('Please upload an image first'); return; }
+  const btn = document.getElementById('predict-btn');
+  btn.innerHTML = '<span class="spinner"></span> Analysing…';
+  btn.disabled = true;
+
+  try {
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+
+    const res = await fetch(`${API}/disease/predict`, {
+      method:'POST',
+      body: formData
+    });
+
+    if(!res.ok) throw new Error(`Server error: ${res.status}`);
+    const data = await res.json();
+    renderDiseaseResult(data);
+  } catch(err){
+    console.error(err);
+    alert('Backend error: ' + err.message + '\n\nMake sure FastAPI is running at ' + API);
+  } finally {
+    btn.innerHTML = '<span>🔬</span> Predict Again';
+    btn.disabled = false;
+  }
+}
+
+function renderDiseaseResult(data){
+  /*
+   * Expected backend response shape:
+   * {
+   *   predicted_class: "Tomato___Early_blight",
+   *   confidence: 0.87,
+   *   top_predictions: [
+   *     {class_name: "Tomato___Early_blight", confidence: 0.87},
+   *     {class_name: "Tomato___Late_blight",  confidence: 0.08},
+   *     ...
+   *   ]
+   * }
+   */
+  const className = data.predicted_class || data.class_name || '';
+  const conf = Math.round((data.confidence || 0) * 100);
+  const topPreds = data.top_predictions || data.top5 || [];
+  const isHealthy = className.toLowerCase().includes('healthy');
+  const meta = getDiseaseInfo(className);
+
+  // Format display name
+  const displayName = className.replace(/_/g,' ').replace(/___/g,' — ');
+  const cropName = className.split('___')[0].replace(/_/g,' ');
+
+  // Header card
+  const hCard = document.getElementById('dis-header-card');
+  hCard.className = 'dis-header-card ' + (isHealthy ? 'healthy' : 'disease');
+  document.getElementById('dis-bigicon').textContent = isHealthy ? '✅' : '🦠';
+  document.getElementById('dis-bigicon').className = 'dis-bigicon ' + (isHealthy ? 'h' : 'd');
+  document.getElementById('dis-name').textContent = isHealthy ? 'Healthy Plant' : displayName;
+  document.getElementById('dis-crop').textContent = `Crop: ${cropName} · Confidence: ${conf}%`;
+
+  const bar = document.getElementById('dis-conf-bar');
+  bar.style.width = conf + '%';
+  bar.className = 'conf-bar-f ' + (conf >= 80 ? 'high' : conf >= 60 ? 'mid' : 'low');
+  document.getElementById('dis-conf-txt').textContent = conf + '%';
+
+  // XAI Bars (top predictions)
+  const xaiEl = document.getElementById('xai-bars');
+  if(topPreds.length > 0){
+    xaiEl.innerHTML = topPreds.slice(0,5).map((p,i) => {
+      const pct = Math.round((p.confidence || 0) * 100);
+      const label = (p.class_name || p.label || '').replace(/_/g,' ').replace(/___/g,' — ');
+      const barClass = i === 0 ? 'high' : 'low';
+      return `<div class="conf-row" style="margin-bottom:8px">
+        <span class="conf-lbl" style="color:var(--ink3);font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${label}">${label}</span>
+        <div class="conf-bar-w"><div class="conf-bar-f ${barClass}" style="width:${pct}%"></div></div>
+        <span class="conf-pct">${pct}%</span>
+      </div>`;
+    }).join('');
+  } else {
+    xaiEl.innerHTML = `<div class="conf-row"><span class="conf-lbl" style="color:var(--ink3)">${displayName}</span><div class="conf-bar-w"><div class="conf-bar-f high" style="width:${conf}%"></div></div><span class="conf-pct">${conf}%</span></div>`;
+  }
+
+  // Details
+  document.getElementById('xi-pathogen').textContent = meta.pathogen;
+  document.getElementById('xi-recovery').textContent = meta.recovery;
+  document.getElementById('xi-treatment').textContent = meta.tx;
+  document.getElementById('xi-pesticide').textContent = meta.pesticide;
+  document.getElementById('xi-cost').textContent = meta.cost;
+
+  // Alert box
+  const alertEl = document.getElementById('dis-alert-box');
+  if(isHealthy){
+    alertEl.innerHTML = '<div class="alert green" style="margin-top:0.8rem"><span>✓</span><span>Plant is healthy. Keep monitoring weekly and maintain preventive care schedule.</span></div>';
+  } else if(conf >= 85){
+    alertEl.innerHTML = '<div class="alert red" style="margin-top:0.8rem"><span>!</span><span>High confidence detection. Start treatment immediately to prevent spread to healthy plants.</span></div>';
+  } else if(conf >= 65){
+    alertEl.innerHTML = '<div class="alert gold" style="margin-top:0.8rem"><span>⚠</span><span>Moderate confidence. For best results, re-upload a clearer close-up image of the affected leaf.</span></div>';
+  } else {
+    alertEl.innerHTML = '<div class="alert gold" style="margin-top:0.8rem"><span>⚠</span><span>Low confidence. Image may be unclear. Consult your local KVK for in-person plant inspection.</span></div>';
+  }
+
+  // Confidence chart
+  if(confChartInst) confChartInst.destroy();
+  const chartLabels = topPreds.length > 0
+    ? topPreds.slice(0,5).map(p=>(p.class_name||'').replace(/_/g,' ').replace(/___/g,' — ').split(' — ').pop())
+    : [displayName];
+  const chartData = topPreds.length > 0
+    ? topPreds.slice(0,5).map(p=>Math.round((p.confidence||0)*100))
+    : [conf];
+  const chartColors = chartLabels.map((_,i)=> i===0 ? '#2e7d46' : '#d8d4c8');
+  confChartInst = new Chart(document.getElementById('confChart'),{
+    type:'bar',
+    data:{labels:chartLabels,datasets:[{label:'Confidence %',data:chartData,backgroundColor:chartColors,borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,scales:{y:{max:100,ticks:{callback:v=>v+'%',font:{size:10}},grid:{color:'rgba(0,0,0,0.04)'}},x:{ticks:{font:{size:9}},grid:{display:false}}},plugins:{legend:{display:false}}}
+  });
+
+  // History
+  const imgSrc = document.getElementById('preview-img').src;
+  detectionHistory.unshift({name:isHealthy?'Healthy Plant':displayName,crop:cropName,conf,img:imgSrc,time:'Just now'});
+  if(detectionHistory.length > 5) detectionHistory.pop();
+  document.getElementById('dis-history').innerHTML = detectionHistory.map(d=>
+    `<div class="history-item">
+      <img class="hi-thumb" src="${d.img}" alt="">
+      <div class="hi-info"><div class="hi-name">${d.name}</div><div class="hi-meta">${d.crop} · ${d.time}</div></div>
+      <div class="hi-conf">${d.conf}%</div>
+    </div>`
+  ).join('');
+
+  // Show result
+  document.getElementById('dis-placeholder').style.display = 'none';
+  document.getElementById('dis-result').classList.add('show');
+}
+
+// ══════════════════════════════════════════════════════════
+// COST ESTIMATOR — Real Backend
+// ══════════════════════════════════════════════════════════
+const BENCHMARK_COSTS = {tomato:148000,capsicum:162000,potato:155000,pea:110000,apple:195000,maize:88000,wheat:72000,ginger:175000,garlic:140000,onion:125000,cabbage:108000,cauliflower:118000};
+const CROP_YIELD_RANGE = {tomato:[60,180],capsicum:[50,140],potato:[80,200],pea:[30,80],apple:[40,160],maize:[20,55],wheat:[15,35],ginger:[60,130],garlic:[40,100],onion:[50,120],cabbage:[60,150],cauliflower:[50,130]};
+const CROP_PRICE_RANGE = {tomato:[600,2800],capsicum:[800,3500],potato:[500,1800],pea:[1000,4000],apple:[2500,7000],maize:[1400,2200],wheat:[2015,2300],ginger:[1500,4500],garlic:[1200,4000],onion:[800,3500],cabbage:[600,2500],cauliflower:[700,3000]};
+
+let costDonutInst=null, cashflowInst=null, benchInst=null;
+
+async function calcCost(){
+  const btn = document.getElementById('calc-btn');
+  btn.innerHTML = '<span class="spinner"></span> Calculating…';
+  btn.disabled = true;
+
+  const cropName = sel('crop');
+  const area = sv('area');
+  const duration = sv('duration');
+  const isInsured = document.getElementById('insurance').checked;
+  const isOrganic = document.getElementById('organic').checked;
+  const isOwnLand = document.getElementById('land-owned').checked;
+
+  const payload = {
+    crop_name: cropName,
+    district: sel('district'),
+    land_area_acre: area,
+    duration_months: duration,
+    land_owned: isOwnLand ? 1 : 0,
+    rent_per_acre_year: isOwnLand ? 0 : sv('rent') * 12,
+    hired_workers: sv('labor'),
+    family_workers: 1,
+    daily_wage_inr: sv('wage'),
+    self_work_hrs_per_day: sv('self-hrs'),
+    seed_quantity: sv('seed-pkts'),
+    water_hrs_per_day: sv('water-hrs'),
+    irrigation_type: sel('irrigation'),
+    fertilizer_cost_inr: sv('fert-bags') * 1500,
+    organic_fertilizer_used: isOrganic ? 1 : 0,
+    organic_fert_cost_inr: isOrganic ? 8000 : 0,
+    pesticide_sprays: sv('pest-sprays'),
+    pesticide_cost_inr: sv('pest-sprays') * 2000,
+    insecticide_cost_inr: 3000,
+    spray_cost_inr: 2000,
+    tractor_mode: sel('tractor-mode'),
+    tractor_hours: sv('tractor-hrs'),
+    harvesting_cost_inr: 8000,
+    storage_cost_inr: 1500,
+    transport_to_market_inr: 5000,
+    mandi_commission_pct: 2,
+    misc_cost_inr: 6000,
+    insurance_taken: isInsured ? 1 : 0,
+    insurance_cost_inr: isInsured ? 2000 : 0,
+    subsidy_scheme: sel('subsidy'),
+    subsidy_amount_inr: 0,
+    season: sel('season'),
+    soil_type: sel('soil')
+  };
+
+  try {
+    const res = await fetch(`${API}/cost/predict`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    if(!res.ok) throw new Error(`Server error: ${res.status}`);
+    const data = await res.json();
+    renderCostResult(data, payload);
+  } catch(err){
+    console.error(err);
+    alert('Backend error: ' + err.message + '\n\nMake sure FastAPI is running at ' + API);
+  } finally {
+    btn.innerHTML = '<span>💰</span> Recalculate';
+    btn.disabled = false;
+  }
+}
+
+function renderCostResult(data, payload){
+  /*
+   * Expected backend response shape:
+   * {
+   *   prediction: {
+   *     total_cost_inr: 102563,
+   *     breakdown: {
+   *       seed_cost: 600, labour_cost: 26250, irrigation_cost: 8960,
+   *       fertilizer_cost: 7500, pesticide_cost: 8000, tractor_cost: 4400,
+   *       harvest_cost: 8000, storage_cost: 1500, transport_cost: 5000,
+   *       misc_cost: 6000, insurance_cost: 2000, rent_cost: 0, ...
+   *     }
+   *   }
+   * }
+   * If breakdown is absent, we compute approximate breakdown locally.
+   */
+  const pred = data.prediction || data;
+  const total = Math.round(pred.total_cost_inr || pred.total_cost || pred.predicted_cost || 0);
+  const area = payload.land_area_acre;
+  const duration = payload.duration_months;
+  const cropName = payload.crop_name;
+
+  // Build breakdown — use backend data if available, else compute locally
+  const bk = pred.breakdown || computeLocalBreakdown(payload, total);
+
+  // Compute per-acre, per-month
+  const perAcre = Math.round(total / area);
+  const perMonth = Math.round(total / duration);
+
+  // Estimate revenue
+  const yr = CROP_YIELD_RANGE[cropName] || [40,100];
+  const pr = CROP_PRICE_RANGE[cropName] || [1000,3000];
+  const midYield = (yr[0]+yr[1])/2 * area;
+  const midPrice = (pr[0]+pr[1])/2;
+  const estRev = Math.round(midYield * midPrice / 100); // quintal * price/quintal
+  const roi = Math.round((estRev-total)/total*100);
+
+  // Fill header
+  document.getElementById('rh-amt').textContent = '₹' + total.toLocaleString('en-IN');
+  document.getElementById('rh-sub').textContent = `${area} acre · ${duration} months · ${payload.district}`;
+  document.getElementById('mv-acre').textContent = '₹' + perAcre.toLocaleString('en-IN');
+  document.getElementById('mv-month').textContent = '₹' + perMonth.toLocaleString('en-IN');
+  document.getElementById('mv-rev').textContent = '₹' + estRev.toLocaleString('en-IN');
+
+  // Breakdown rows
+  const bkItems = [
+    {lbl:'Labour Cost',    val:bk.labour_cost||bk.labor_cost||0},
+    {lbl:'Seed / Planting',val:bk.seed_cost||0},
+    {lbl:'Fertilizer',     val:bk.fertilizer_cost||0},
+    {lbl:'Pesticide/Spray',val:(bk.pesticide_cost||0)+(bk.spray_cost||0)},
+    {lbl:'Irrigation',     val:bk.irrigation_cost||0},
+    {lbl:'Tractor/Machine',val:bk.tractor_cost||0},
+    {lbl:'Harvest',        val:bk.harvest_cost||bk.harvesting_cost||0},
+    {lbl:'Transport/Mandi',val:(bk.transport_cost||0)+(bk.storage_cost||0)},
+    {lbl:'Rent',           val:bk.rent_cost||0},
+    {lbl:'Insurance/Misc', val:(bk.insurance_cost||0)+(bk.misc_cost||0)},
+  ].filter(i=>i.val > 0);
+
+  const bkHtml = bkItems.map(i=>{
+    const pct = total > 0 ? Math.round(i.val/total*100) : 0;
+    return `<div class="br-row">
+      <span class="br-lbl">${i.lbl}</span>
+      <div class="br-bar-w"><div class="br-bar" style="width:${pct}%"></div></div>
+      <span class="br-pct">${pct}%</span>
+      <span class="br-amt">₹${Math.round(i.val).toLocaleString('en-IN')}</span>
+    </div>`;
+  }).join('');
+  document.getElementById('cost-breakdown').innerHTML = '<div style="margin-top:1rem">'+bkHtml+'</div>';
+
+  // Tips
+  const tips = [];
+  if(roi > 30) tips.push({cls:'green',txt:`Estimated ROI: ~${roi}% — good season expected for ${cropName}.`});
+  else if(roi > 0) tips.push({cls:'gold',txt:`Estimated ROI: ~${roi}% — margins are tight, consider subsidy schemes.`});
+  else tips.push({cls:'red',txt:`Revenue estimate is below cost. Review input usage and explore better market channels.`});
+  if((bk.pesticide_cost||0) > total*0.12) tips.push({cls:'gold',txt:'Pesticide costs are high (>12% of total). Consider IPM practices to reduce chemical input.'});
+  if(payload.irrigation_type==='borewell') tips.push({cls:'gold',txt:'Drip irrigation could reduce water costs by 30–40% vs borewell over the season.'});
+  document.getElementById('cost-tips').innerHTML = tips.map(t=>`<div class="tip ${t.cls}"><span>${t.cls==='green'?'✓':t.cls==='gold'?'⚠':'!'}</span><span>${t.txt}</span></div>`).join('');
+
+  // Donut chart
+  if(costDonutInst) costDonutInst.destroy();
+  costDonutInst = new Chart(document.getElementById('costDonut'),{
+    type:'doughnut',
+    data:{
+      labels: bkItems.map(i=>i.lbl),
+      datasets:[{data: bkItems.map(i=>Math.round(i.val)), backgroundColor:['#1a4a28','#2e7d46','#4caf6a','#c07d20','#1d5f96','#b33030','#4a5548','#8b7d6b','#d4a044','#7c9c85'], borderWidth:2, borderColor:'#fff'}]
+    },
+    options:{responsive:true,maintainAspectRatio:false,cutout:'58%',plugins:{legend:{position:'right',labels:{font:{size:10},boxWidth:10,padding:8}}}}
+  });
+
+  // Cashflow chart (spread over months)
+  if(cashflowInst) cashflowInst.destroy();
+  const months = Array.from({length:duration}, (_,i)=>`Month ${i+1}`);
+  const monthlyBase = perMonth;
+  // Front-load seed & setup, back-load harvest
+  const cashData = months.map((_,i)=>{
+    let v = monthlyBase;
+    if(i===0) v += (bk.seed_cost||0) + (bk.tractor_cost||0)*0.5;
+    if(i===duration-1) v += (bk.harvest_cost||0) + (bk.transport_cost||0) + (bk.storage_cost||0);
+    return Math.round(v);
+  });
+  cashflowInst = new Chart(document.getElementById('cashflowChart'),{
+    type:'bar',
+    data:{labels:months, datasets:[{label:'Cash Outflow (₹)',data:cashData,backgroundColor:'rgba(46,125,70,0.7)',borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,scales:{y:{ticks:{callback:v=>'₹'+(v/1000).toFixed(0)+'k',font:{size:10}},grid:{color:'rgba(0,0,0,0.04)'}},x:{ticks:{font:{size:10}},grid:{display:false}}},plugins:{legend:{display:false}}}
+  });
+
+  // Benchmark chart
+  if(benchInst) benchInst.destroy();
+  const benchData = Object.entries(BENCHMARK_COSTS).map(([k,v])=>({crop:k,val:Math.round(v*area)}));
+  const selectedCropBenchmark = Math.round((BENCHMARK_COSTS[cropName]||148000)*area);
+  benchInst = new Chart(document.getElementById('benchChart'),{
+    type:'bar',
+    data:{
+      labels: benchData.map(b=>b.crop.charAt(0).toUpperCase()+b.crop.slice(1)),
+      datasets:[
+        {label:'Benchmark (₹)',data:benchData.map(b=>b.val),backgroundColor:benchData.map(b=>b.crop===cropName?'#1a4a28':'rgba(46,125,70,0.25)'),borderRadius:4},
+        {label:'Your Estimate (₹)',data:benchData.map(b=>b.crop===cropName?total:null),backgroundColor:'#c07d20',borderRadius:4}
+      ]
+    },
+    options:{responsive:true,maintainAspectRatio:false,scales:{y:{ticks:{callback:v=>'₹'+(v/1000).toFixed(0)+'k',font:{size:10}},grid:{color:'rgba(0,0,0,0.04)'}},x:{ticks:{font:{size:9}},grid:{display:false}}},plugins:{legend:{labels:{font:{size:11},boxWidth:10}}}}
+  });
+
+  // Show result
+  document.getElementById('cost-placeholder').style.display = 'none';
+  document.getElementById('cost-result').classList.remove('hidden');
+}
+
+// Local breakdown approximation (used if backend doesn't return breakdown)
+function computeLocalBreakdown(p, total){
+  const area = p.land_area_acre;
+  const dur = p.duration_months;
+  const labour = p.hired_workers * p.daily_wage_inr * dur * 26 + p.self_work_hrs_per_day * 50 * dur * 30;
+  const seed = p.seed_quantity * {tomato:120,capsicum:150,potato:800,pea:90,apple:80,maize:180,wheat:25,ginger:60,garlic:70,onion:100,cabbage:80,cauliflower:90}[p.crop_name];
+  const fert = p.fertilizer_cost_inr + (p.organic_fertilizer_used ? p.organic_fert_cost_inr : 0);
+  const pest = p.pesticide_cost_inr + p.insecticide_cost_inr + p.spray_cost_inr;
+  const irr = {drip:16,borewell:70,canal:30,tank_pond:40,rain_fed:2}[p.irrigation_type] * p.water_hrs_per_day * dur * 30;
+  const tractor = {rented:550,owned:200,bullock:160,none:0}[p.tractor_mode] * p.tractor_hours;
+  const harvest = p.harvesting_cost_inr;
+  const transport = p.transport_to_market_inr + p.storage_cost_inr;
+  const rent = p.land_owned ? 0 : p.rent_per_acre_year / 12 * dur * area;
+  const ins = p.insurance_cost_inr;
+  const misc = p.misc_cost_inr;
+  return {labour_cost:labour,seed_cost:seed,fertilizer_cost:fert,pesticide_cost:pest,irrigation_cost:irr,tractor_cost:tractor,harvest_cost:harvest,transport_cost:transport,rent_cost:rent,insurance_cost:ins,misc_cost:misc};
+}
+
+// ══════════════════════════════════════════════════════════
+// AI AGENTS TAB
+// ══════════════════════════════════════════════════════════
+
+const AGENTS_PIPELINE = [
+  {name:'DATA_COLLECTION', icon:'📡', label:'Data Collection', version:'1.0.0', desc:'Satellite data ingestion via NASA AppEEARS, MODIS, and ERA5. Downloads and stores geospatial rasters for all target districts.', timeout:300, hardDep:false},
+  {name:'WEATHER_INTELLIGENCE', icon:'🌦️', label:'Weather Intelligence', version:'1.0.0', desc:'Polls Open-Meteo and IMD APIs for each district. Stores normalized WeatherObservation records. Detects temperature/humidity anomalies.', timeout:120, hardDep:false},
+  {name:'PREDICTION', icon:'🧠', label:'Prediction Engine', version:'2.0.0', desc:'Runs multi-hazard ML predictions (Rainfall, Cloudburst, Landslide) for each district using XGBoost, LightGBM, LSTM, and TFT models via the model registry.', timeout:180, hardDep:true},
+  {name:'ALERT', icon:'🚨', label:'Alert & Risk', version:'1.0.0', desc:'Evaluates prediction confidence against severity thresholds. Generates alerts (LOW/MODERATE/HIGH/CRITICAL) and cascades to notification.', timeout:120, hardDep:false},
+  {name:'DISASTER_INTELLIGENCE', icon:'💀', label:'Disaster Intelligence', version:'1.0.0', desc:'Compound risk assessment combining rainfall, landslide, and flood probabilities. Feeds the Digital Twin state.', timeout:180, hardDep:false},
+  {name:'DIGITAL_TWIN', icon:'🌍', label:'Digital Twin', version:'1.0.0', desc:'Syncs TwinState with latest data. Runs hydrology, landslide, and impact models. Stores visualization outputs for the dashboard.', timeout:300, hardDep:false},
+  {name:'EXPLAINABILITY', icon:'🔬', label:'Explainability (XAI)', version:'1.0.0', desc:'Generates SHAP explanations for HIGH/CRITICAL predictions. Computes feature importance and counterfactual analysis.', timeout:300, hardDep:false},
+  {name:'DECISION_SUPPORT', icon:'📋', label:'Decision Support', version:'1.0.0', desc:'Produces SDMA decision briefs combining predictions, alerts, and XAI outputs. Generates actionable recommendations for disaster managers.', timeout:300, hardDep:false},
+  {name:'REPORT_GENERATOR', icon:'📊', label:'Report Generator', version:'1.0.0', desc:'Compiles PDF/HTML reports from all agent outputs. Uploads to MinIO object storage. Creates Report records for dashboard access.', timeout:300, hardDep:false},
+  {name:'NOTIFICATION', icon:'📨', label:'Notification', version:'1.0.0', desc:'Delivers alerts and reports to stakeholders via email, SMS (Twilio), push notifications, and webhook integrations.', timeout:120, hardDep:false},
+  {name:'MONITORING', icon:'💓', label:'Health Monitor', version:'1.0.0', desc:'Health sweep of all agents, database connections, Redis pools, and model registry. Always runs last in the cycle.', timeout:60, hardDep:false},
+];
+
+let pipelineRunning = false;
+let agentTimingChartInst = null;
+
+function initAgentCards(){
+  const grid = document.getElementById('pipeline-grid');
+  grid.innerHTML = AGENTS_PIPELINE.map((a,i)=> `
+    <div class="agent-card" id="agent-${a.name}" onclick="showAgentDetail('${a.name}')">
+      <div class="ac-header">
+        <span class="ac-icon">${a.icon}</span>
+        <span class="ac-name">${a.label}</span>
+        <span class="ac-badge idle" id="badge-${a.name}">IDLE</span>
+      </div>
+      <div class="ac-desc">${a.desc.substring(0,80)}...</div>
+      <div class="ac-timing" id="timing-${a.name}"></div>
+    </div>
+  `).join('');
+}
+
+function showAgentDetail(name){
+  const a = AGENTS_PIPELINE.find(x=>x.name===name);
+  if(!a) return;
+  const panel = document.getElementById('agent-detail-panel');
+  document.getElementById('adp-title').innerHTML = `${a.icon} ${a.label} <span style="font-size:11px;color:var(--ink3);font-family:var(--mono);font-weight:400">v${a.version}</span>`;
+  document.getElementById('adp-desc').textContent = a.desc;
+  document.getElementById('adp-meta').innerHTML = `
+    <div class="adp-item"><div class="adp-item-lbl">Agent Name</div><div class="adp-item-val" style="font-family:var(--mono)">${a.name}</div></div>
+    <div class="adp-item"><div class="adp-item-lbl">Timeout</div><div class="adp-item-val">${a.timeout}s (${(a.timeout/60).toFixed(1)} min)</div></div>
+    <div class="adp-item"><div class="adp-item-lbl">Hard Dependency</div><div class="adp-item-val">${a.hardDep ? '⚠ Yes — skipped if predecessor fails' : '✓ No — runs independently'}</div></div>
+    <div class="adp-item"><div class="adp-item-lbl">Pipeline Position</div><div class="adp-item-val">#${AGENTS_PIPELINE.indexOf(a)+1} of ${AGENTS_PIPELINE.length}</div></div>
+  `;
+  panel.classList.add('show');
+  panel.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+async function runAgentPipeline(){
+  if(pipelineRunning) return;
+  pipelineRunning = true;
+  const btn = document.getElementById('run-pipeline-btn');
+  btn.disabled = true;
+  const statusEl = document.getElementById('pipeline-status');
+  const summary = document.getElementById('pipeline-summary');
+  summary.classList.remove('show');
+
+  // Reset all cards
+  AGENTS_PIPELINE.forEach(a=>{
+    const card = document.getElementById('agent-'+a.name);
+    card.className = 'agent-card';
+    document.getElementById('badge-'+a.name).className = 'ac-badge idle';
+    document.getElementById('badge-'+a.name).textContent = 'IDLE';
+    document.getElementById('timing-'+a.name).textContent = '';
+  });
+
+  let completed=0, failed=0, skipped=0, totalTime=0;
+  const timings = [];
+  let previousFailed = false;
+  // Simulate a failure for one agent to show the skip mechanism
+  const failIdx = Math.random() < 0.5 ? 1 : -1; // 50% chance WeatherIntelligence fails
+
+  for(let i=0; i<AGENTS_PIPELINE.length; i++){
+    const a = AGENTS_PIPELINE[i];
+    const card = document.getElementById('agent-'+a.name);
+    const badge = document.getElementById('badge-'+a.name);
+    const timingEl = document.getElementById('timing-'+a.name);
+
+    // Hard dependency check
+    if(a.hardDep && previousFailed){
+      card.className = 'agent-card skipped';
+      badge.className = 'ac-badge skipped';
+      badge.textContent = 'SKIPPED';
+      timingEl.textContent = '⚠ Hard dependency failed';
+      timings.push({label:a.label, time:0});
+      skipped++;
+      statusEl.textContent = `SKIPPING ${a.label} — hard dependency failed`;
+      await sleep(400);
+      continue;
+    }
+
+    // Start running
+    card.className = 'agent-card running';
+    badge.className = 'ac-badge running';
+    badge.textContent = 'RUNNING';
+    statusEl.textContent = `RUNNING [${i+1}/${AGENTS_PIPELINE.length}] ${a.label}...`;
+    card.scrollIntoView({behavior:'smooth',block:'nearest'});
+
+    const execTime = 0.5 + Math.random() * 2.5;
+    await sleep(800 + Math.random() * 700);
+
+    // Determine outcome
+    if(i === failIdx){
+      card.className = 'agent-card failed';
+      badge.className = 'ac-badge failed';
+      badge.textContent = 'FAILED';
+      timingEl.textContent = `✗ Error after ${execTime.toFixed(2)}s`;
+      timings.push({label:a.label, time:execTime});
+      failed++;
+      previousFailed = true;
+    } else {
+      card.className = 'agent-card completed';
+      badge.className = 'ac-badge completed';
+      badge.textContent = 'COMPLETED';
+      timingEl.textContent = `✓ ${execTime.toFixed(2)}s`;
+      timings.push({label:a.label, time:execTime});
+      completed++;
+      previousFailed = false;
+    }
+    totalTime += execTime;
+  }
+
+  // Show summary
+  statusEl.textContent = `COMPLETED — ${completed} succeeded, ${failed} failed, ${skipped} skipped in ${totalTime.toFixed(1)}s`;
+  document.getElementById('ps-completed').textContent = completed;
+  document.getElementById('ps-failed').textContent = failed;
+  document.getElementById('ps-skipped').textContent = skipped;
+  document.getElementById('ps-time').textContent = totalTime.toFixed(1) + 's';
+  summary.classList.add('show');
+
+  // Update timing chart
+  if(agentTimingChartInst) agentTimingChartInst.destroy();
+  agentTimingChartInst = new Chart(document.getElementById('agentTimingChart'),{
+    type:'bar',
+    data:{
+      labels: timings.map(t=>t.label),
+      datasets:[{label:'Execution Time (s)',data:timings.map(t=>+t.time.toFixed(2)),backgroundColor:timings.map((_,i)=>i===failIdx?'rgba(179,48,48,0.7)':'rgba(46,125,70,0.7)'),borderRadius:4}]
+    },
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,scales:{x:{ticks:{callback:v=>v+'s',font:{size:10}},grid:{color:'rgba(0,0,0,0.04)'}},y:{ticks:{font:{size:10}},grid:{display:false}}},plugins:{legend:{display:false}}}
+  });
+
+  btn.disabled = false;
+  pipelineRunning = false;
+}
+
+function resetPipeline(){
+  if(pipelineRunning) return;
+  AGENTS_PIPELINE.forEach(a=>{
+    const card = document.getElementById('agent-'+a.name);
+    card.className = 'agent-card';
+    document.getElementById('badge-'+a.name).className = 'ac-badge idle';
+    document.getElementById('badge-'+a.name).textContent = 'IDLE';
+    document.getElementById('timing-'+a.name).textContent = '';
+  });
+  document.getElementById('pipeline-status').textContent = 'IDLE — Click ▶ to simulate a full 11-stage pipeline run';
+  document.getElementById('pipeline-summary').classList.remove('show');
+  document.getElementById('agent-detail-panel').classList.remove('show');
+}
+
+// Agent Chat Demo
+const AGENT_CHAT_RESPONSES = [
+  {
+    q: /flood|risk|mandi/i,
+    intent: {intent:'flood_risk_assessment',entities:{location:'Mandi',hazard_type:'flash_flood'},requires_tools:['weather_tool','prediction_tool','alert_tool','digital_twin_tool']},
+    tasks: [{tool:'weather_tool',params:{location:'Mandi',timeframe:'72h'}},{tool:'prediction_tool',params:{hazard:'flash_flood',location:'Mandi'}},{tool:'alert_tool',params:{location:'Mandi'}},{tool:'digital_twin_tool',params:{scenario:'flood_sim'}}],
+    answer: 'Based on the current analysis for Mandi district: the Weather Intelligence Agent reports 85mm precipitation in the last 24h with continued heavy rainfall expected. The Prediction Agent (XGBoost + LSTM ensemble) estimates a 73% probability of flash flooding in low-lying areas within the next 48h. The Alert Agent has raised a HIGH severity alert. The Digital Twin hydrology model shows the Beas river at 87% of danger level. Recommend immediate evacuation of riverside settlements.'
+  },
+  {
+    q: /cloudburst|kullu|predict/i,
+    intent: {intent:'cloudburst_prediction',entities:{location:'Kullu',hazard_type:'cloudburst'},requires_tools:['weather_tool','prediction_tool','alert_tool']},
+    tasks: [{tool:'weather_tool',params:{location:'Kullu'}},{tool:'prediction_tool',params:{hazard:'cloudburst',location:'Kullu'}},{tool:'alert_tool',params:{location:'Kullu'}}],
+    answer: 'Cloudburst analysis for Kullu district: The Weather Agent detects rapidly developing convective cells with CAPE values exceeding 2500 J/kg. The Prediction Agent (Temporal Fusion Transformer) estimates a 62% probability of localized cloudburst events in the next 12h, particularly in the upper Kullu valley above 2,500m elevation. Alert level: MODERATE escalating to HIGH. Recommended: activate early warning sirens in Manali and upper Kullu tehsils.'
+  },
+  {
+    q: /landslide|chamba|slope/i,
+    intent: {intent:'landslide_risk',entities:{location:'Chamba',hazard_type:'landslide'},requires_tools:['weather_tool','prediction_tool','digital_twin_tool']},
+    tasks: [{tool:'weather_tool',params:{location:'Chamba'}},{tool:'prediction_tool',params:{hazard:'landslide',location:'Chamba'}},{tool:'digital_twin_tool',params:{scenario:'landslide_sim'}}],
+    answer: 'Landslide risk assessment for Chamba: Cumulative rainfall over the past 7 days is 340mm — exceeding the critical threshold of 300mm. Soil moisture (from ERA5-Land) is at 92% saturation. The landslide prediction model (LightGBM) flags 4 high-risk zones along NH-154. The Digital Twin slope stability model confirms Factor of Safety < 1.2 at Salooni and Tissa. Alert: CRITICAL. Recommend road closures and immediate geotechnical inspection.'
+  },
+];
+
+async function sendAgentChat(){
+  const input = document.getElementById('agent-chat-input');
+  const q = input.value.trim();
+  if(!q) return;
+  input.value = '';
+  const body = document.getElementById('agent-chat-body');
+  body.innerHTML += `<div class="acm user">${q}</div>`;
+  body.scrollTop = body.scrollHeight;
+
+  // Find matching response or use default
+  const match = AGENT_CHAT_RESPONSES.find(r=>r.q.test(q)) || AGENT_CHAT_RESPONSES[0];
+
+  // Animate LangGraph nodes
+  const lgNodes = document.querySelectorAll('.lg-node');
+  const stages = ['understand_intent','plan_tasks','call_tools','aggregate','generate','finalize'];
+  const stageMessages = [
+    `<b>Step 1 — Intent Understanding:</b><br><pre style="font-size:10px;white-space:pre-wrap;margin-top:4px">${JSON.stringify(match.intent,null,2)}</pre>`,
+    `<b>Step 2 — Task Planning:</b><br><pre style="font-size:10px;white-space:pre-wrap;margin-top:4px">${JSON.stringify({tasks:match.tasks},null,2)}</pre>`,
+    `<b>Step 3 — Tool Execution:</b><br>${match.tasks.map(t=>`✓ ${t.tool}(${JSON.stringify(t.params)})`).join('<br>')}`,
+    `<b>Step 4 — Aggregation & Validation:</b><br>All ${match.tasks.length} tool results received. Cross-checking consistency...`,
+    null, // generate - shows answer directly
+    `<b>Step 6 — Finalize:</b><br>✓ Conversation memory updated<br>✓ Execution logged (session: ${Date.now().toString(36)})`,
+  ];
+
+  for(let i=0;i<stages.length;i++){
+    lgNodes.forEach(n=>n.classList.remove('active','done'));
+    for(let j=0;j<i;j++) lgNodes[j].classList.add('done');
+    lgNodes[i].classList.add('active');
+
+    // Show typing
+    const typingId = 'typing-'+Date.now();
+    body.innerHTML += `<div class="acm system" id="${typingId}"><div class="typing-dots"><span></span><span></span><span></span></div></div>`;
+    body.scrollTop = body.scrollHeight;
+    await sleep(600 + Math.random()*500);
+    document.getElementById(typingId)?.remove();
+
+    if(i===4){
+      body.innerHTML += `<div class="acm system">${match.answer}</div>`;
+    } else if(stageMessages[i]){
+      body.innerHTML += `<div class="acm step">${stageMessages[i]}</div>`;
+    }
+    body.scrollTop = body.scrollHeight;
+  }
+
+  lgNodes.forEach(n=>{n.classList.remove('active');n.classList.add('done')});
+}
+
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+// ══════════════════════════════════════════════════════════
+// RAG ENGINE TAB
+// ══════════════════════════════════════════════════════════
+
+function updateRAGConfig(){
+  const cs = document.getElementById('rag-chunk-size').value;
+  const co = document.getElementById('rag-overlap').value;
+  const tk = document.getElementById('rag-topk').value;
+  const rk = document.getElementById('rag-rrf-k').value;
+  const sim = document.getElementById('rag-sim').value;
+  const temp = document.getElementById('rag-temp').value;
+  document.getElementById('rag-chunk-val').textContent = cs;
+  document.getElementById('rag-overlap-val').textContent = co;
+  document.getElementById('rag-topk-val').textContent = tk;
+  document.getElementById('rag-rrf-val').textContent = rk;
+  document.getElementById('rag-sim-val').textContent = sim;
+  document.getElementById('rag-temp-val').textContent = temp;
+  document.getElementById('rv-chunk').textContent = cs+' / '+co;
+  document.getElementById('rv-topk').textContent = 'top_k='+tk;
+  document.getElementById('rv-rrf').textContent = 'k='+rk;
+}
+
+const RAG_SAMPLE_CHUNKS = [
+  {id:'chunk_017', page:12, source:'cloudburst_hp_2023.pdf', text:'Cloudbursts in the Himalayan region are primarily caused by orographic lifting of moisture-laden monsoon air masses...', score_faiss:0.234, score_bm25:18.7, rrf:0.0328, ce:0.943},
+  {id:'chunk_042', page:28, source:'rainfall_prediction_dl.pdf', text:'Deep learning models for rainfall prediction in mountainous terrain must account for elevation gradients, valley channeling effects...', score_faiss:0.312, score_bm25:15.2, rrf:0.0311, ce:0.891},
+  {id:'chunk_008', page:5, source:'disaster_risk_hp.pdf', text:'Flash floods in Himachal Pradesh are triggered when localized extreme precipitation events exceed the infiltration capacity of steep mountain slopes...', score_faiss:0.287, score_bm25:22.1, rrf:0.0342, ce:0.917},
+  {id:'chunk_091', page:67, source:'imd_bulletin_2024.pdf', text:'The India Meteorological Department classifies cloudburst events as rainfall exceeding 100mm in one hour over a geographical area of 20-30 sq km...', score_faiss:0.198, score_bm25:25.4, rrf:0.0351, ce:0.962},
+  {id:'chunk_055', page:34, source:'landslide_susceptibility.pdf', text:'Antecedent soil moisture conditions, computed from ERA5-Land reanalysis data, serve as a critical precursor variable for landslide triggering...', score_faiss:0.356, score_bm25:11.8, rrf:0.0287, ce:0.823},
+  {id:'chunk_023', page:15, source:'cloudburst_hp_2023.pdf', text:'The mesoscale convective systems responsible for cloudbursts typically develop between 1500-2000m elevation where maximum orographic uplift occurs...', score_faiss:0.221, score_bm25:19.9, rrf:0.0335, ce:0.934},
+  {id:'chunk_077', page:51, source:'extreme_weather_gpm.pdf', text:'NASA GPM IMERG satellite precipitation estimates provide near-real-time monitoring of extreme rainfall events with 0.1° spatial resolution...', score_faiss:0.345, score_bm25:13.5, rrf:0.0298, ce:0.856},
+  {id:'chunk_033', page:21, source:'disaster_risk_hp.pdf', text:'The vulnerability assessment framework integrates population density, infrastructure proximity, and slope angle to compute a composite disaster risk index...', score_faiss:0.402, score_bm25:9.3, rrf:0.0265, ce:0.789},
+];
+
+async function runRAGDemo(){
+  const input = document.getElementById('rag-query-input');
+  const question = input.value.trim() || 'How do cloudbursts form in the Himalayan region?';
+  const body = document.getElementById('rag-demo-body');
+  body.innerHTML = '';
+  const topK = parseInt(document.getElementById('rag-topk').value) || 4;
+  const rrfK = parseInt(document.getElementById('rag-rrf-k').value) || 60;
+
+  // Animate pipeline stages
+  const stages = document.querySelectorAll('.rag-stage');
+  stages.forEach(s=>s.classList.remove('active','done'));
+
+  // Step 1: Query Rewriting
+  setRagStage('load','active');
+  await addRAGStep(body, 1, 'Query Rewriting', 0.42, `<div>Original: "${question}"</div><div style="margin-top:4px">Rewritten: "${question.replace(/how do |what are |explain /i,'')} mechanisms formation process Himalayan mountain region India"</div><div style="margin-top:4px;font-size:10px;color:var(--ink3)">ConversationMemory: (empty — first turn)</div>`);
+  setRagStage('load','done');
+
+  // Step 2: Embedding
+  setRagStage('clean','active');
+  setRagStage('chunk','active');
+  setRagStage('embed','active');
+  await addRAGStep(body, 2, 'Query Embedding', 0.08, `<div>Model: <b>sentence-transformers/all-MiniLM-L6-v2</b></div><div>Embedding dim: 384</div><div style="font-family:var(--mono);font-size:10px;margin-top:4px;color:var(--blue)">[0.0234, -0.0891, 0.1456, 0.0672, -0.0345, ... ] (384d)</div>`);
+  ['clean','chunk','embed'].forEach(s=>setRagStage(s,'done'));
+
+  // Step 3: FAISS retrieval
+  setRagStage('index','active');
+  const faissResults = [...RAG_SAMPLE_CHUNKS].sort((a,b)=>a.score_faiss-b.score_faiss).slice(0,6);
+  await addRAGStep(body, 3, 'FAISS Dense Retrieval (Candidate Pool=10)', 0.15, faissResults.map(c=>`<div class="chunk">📄 <b>${c.id}</b> — ${c.source} (p.${c.page}) — L2: <span class="score">${c.score_faiss.toFixed(3)}</span><br><span style="color:var(--ink3)">${c.text.substring(0,100)}...</span></div>`).join(''));
+
+  // Step 4: BM25 retrieval
+  const bm25Results = [...RAG_SAMPLE_CHUNKS].sort((a,b)=>b.score_bm25-a.score_bm25).slice(0,6);
+  await addRAGStep(body, 4, 'BM25 Sparse Retrieval (Candidate Pool=10)', 0.03, bm25Results.map(c=>`<div class="chunk">📄 <b>${c.id}</b> — ${c.source} (p.${c.page}) — BM25: <span class="score">${c.score_bm25.toFixed(1)}</span><br><span style="color:var(--ink3)">${c.text.substring(0,100)}...</span></div>`).join(''));
+  setRagStage('index','done');
+
+  // Step 5: RRF Fusion
+  setRagStage('rrf','active');
+  const rrfResults = [...RAG_SAMPLE_CHUNKS].sort((a,b)=>b.rrf-a.rrf);
+  await addRAGStep(body, 5, `Reciprocal Rank Fusion (k=${rrfK})`, 0.01, `<div style="margin-bottom:4px">Formula: score = Σ 1/(k + rank)  for each retriever</div>` + rrfResults.slice(0,6).map((c,i)=>`<div class="chunk">#${i+1} <b>${c.id}</b> — RRF: <span class="score">${c.rrf.toFixed(4)}</span> — ${c.source} (p.${c.page})</div>`).join(''));
+  setRagStage('rrf','done');
+
+  // Step 6: Cross-Encoder Reranking
+  setRagStage('rerank','active');
+  const ceResults = [...RAG_SAMPLE_CHUNKS].sort((a,b)=>b.ce-a.ce).slice(0,topK);
+  await addRAGStep(body, 6, `Cross-Encoder Reranking → top_k=${topK}`, 0.89, ceResults.map((c,i)=>`<div class="chunk">🎯 #${i+1} <b>${c.id}</b> — CE Score: <span class="score">${c.ce.toFixed(3)}</span> — ${c.source} (p.${c.page})<br><span style="color:var(--ink3)">${c.text.substring(0,120)}...</span></div>`).join(''));
+  setRagStage('rerank','done');
+
+  // Step 7: LLM Generation
+  setRagStage('llm','active');
+  const answer = `Cloudbursts in the Himalayan region, particularly in Himachal Pradesh, are primarily caused by **orographic lifting** of moisture-laden monsoon air masses when they encounter steep mountain slopes (typically between 1,500–2,000m elevation where maximum uplift occurs).
+
+According to the IMD classification, a cloudburst is defined as rainfall exceeding **100mm in one hour** over a geographical area of 20–30 sq km. The mesoscale convective systems responsible for these events develop rapidly when warm, moist air from the Indo-Gangetic plains is forced upward by the Himalayan terrain.
+
+Key triggering factors include:
+• **CAPE values exceeding 2,500 J/kg** indicating strong atmospheric instability
+• **Antecedent soil moisture** at or near saturation (from ERA5-Land data)
+• **Valley channeling effects** that concentrate moisture convergence
+
+NASA GPM IMERG satellite data provides near-real-time monitoring of these extreme events at 0.1° resolution, enabling early detection before ground stations report.`;
+  await addRAGStep(body, 7, 'LLM Answer Generation (Groq · temp=0.2)', 1.34, `<div class="answer">${answer.replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<b>$1</b>').replace(/• /g,'&bull; ')}</div><div style="margin-top:8px;font-size:10px;color:var(--ink3)"><b>Sources:</b> ${ceResults.map(c=>c.source+' (p.'+c.page+')').join(' · ')}</div>`);
+  setRagStage('llm','done');
+
+  // Update breakdown columns
+  updateBreakdown(faissResults, bm25Results, rrfResults, ceResults);
+}
+
+function setRagStage(name, cls){
+  const el = document.querySelector(`.rag-stage[data-rag="${name}"]`);
+  if(el){el.classList.remove('active','done');el.classList.add(cls);}
+}
+
+async function addRAGStep(container, num, title, time, content){
+  const div = document.createElement('div');
+  div.className = 'rag-step';
+  div.innerHTML = `<div class="rag-step-header"><span class="rag-step-num">${num}</span><span class="rag-step-title">${title}</span><span class="rag-step-time">${time.toFixed(2)}s</span></div><div class="rag-step-content">${content}</div>`;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+  await sleep(500 + Math.random()*400);
+}
+
+function updateBreakdown(faiss, bm25, rrf, ce){
+  const mk = (items, scoreKey, fmt) => items.map(c=>`<div class="rb-item"><span class="rb-chunk">${c.id} (p.${c.page})</span><span class="rb-score">${fmt(c[scoreKey])}</span></div>`).join('');
+  document.getElementById('rb-faiss').innerHTML = mk(faiss,'score_faiss',v=>v.toFixed(3));
+  document.getElementById('rb-bm25').innerHTML = mk(bm25,'score_bm25',v=>v.toFixed(1));
+  document.getElementById('rb-rrf').innerHTML = mk(rrf.slice(0,6),'rrf',v=>v.toFixed(4));
+  document.getElementById('rb-ce').innerHTML = mk(ce,'ce',v=>v.toFixed(3));
+}
+
+// Init on page load
+window.addEventListener('DOMContentLoaded', function(){
+  // Only run if agents tab HTML exists
+  if(document.getElementById('pipeline-grid')) initAgentCards();
+});
+</script>
+</body>
+</html>

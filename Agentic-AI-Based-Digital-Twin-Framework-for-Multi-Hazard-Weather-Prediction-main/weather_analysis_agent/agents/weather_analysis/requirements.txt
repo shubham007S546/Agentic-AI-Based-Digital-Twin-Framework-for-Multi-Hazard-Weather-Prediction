@@ -1,0 +1,14 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+langgraph>=0.1
+httpx>=0.27
+python-dotenv>=1.0
+
+# optional -- only used to turn the structured summary into richer natural
+# language; falls back to a deterministic template without these
+langchain-groq>=0.1
+langchain-core>=0.2
+
+# optional -- only needed if you set REDIS_URL for a shared/persistent cache
+redis>=5.0

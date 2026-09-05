@@ -1,0 +1,67 @@
+# -------------------------
+# Python
+# -------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual Environment
+.venv/
+venv/
+env/
+
+# VS Code
+.vscode/
+
+# Environment
+.env
+
+# -------------------------
+# Config (contains API keys)
+# -------------------------
+config/config.yaml
+
+# -------------------------
+# Cache
+# -------------------------
+.cache/
+.cache.sqlite
+*.db
+
+# -------------------------
+# Large datasets
+# -------------------------
+datasets/
+
+# Generated outputs
+eda_output/
+
+# -------------------------
+# Logs
+# -------------------------
+logs/
+*.log
+
+# -------------------------
+# Model files
+# -------------------------
+*.h5
+*.hdf5
+*.pth
+*.pt
+*.pkl
+*.joblib
+*.parquet
+
+# -------------------------
+# Data files (large, regenerable)
+# -------------------------
+*.csv
+digital_twin/
+ml_ready/
+machine_learning_module/artifacts/
+
+# OS files
+Thumbs.db
+.DS_Store

@@ -1,0 +1,40 @@
+{
+  "metadata": {
+    "report_id": "RPT-2026-09-04-772EB0",
+    "report_type": "multi_hazard",
+    "format": "json",
+    "version": 3,
+    "generated_at": "2026-09-04T09:16:00.858976+00:00",
+    "districts": [
+      "Mandi"
+    ],
+    "data_sources_used": [],
+    "data_completeness": 0.0
+  },
+  "sections": [
+    {
+      "title": "Summary",
+      "kind": "text",
+      "content": "**Executive Summary \u2013 Mandi District (Multi\u2011Hazard Assessment)**  \nThe latest multi\u2011hazard analysis for Mandi reveals no significant weather or environmental anomalies in the available datasets. No extreme events\u2014such as floods, landslides, or severe storms\u2014were recorded during the assessment period. Consequently, the district\u2019s hazard risk profile remains low, with no elevated threats identified. Routine monitoring and standard preparedness measures are recommended to maintain this status."
+    },
+    {
+      "title": "Key Insights",
+      "kind": "text",
+      "content": "- No significant anomalies, extreme events, or elevated risk detected in available data."
+    },
+    {
+      "title": "District Metrics",
+      "kind": "table",
+      "content": [
+        {
+          "District": "Mandi",
+          "Temp (C)": null,
+          "Humidity (%)": null,
+          "Predicted Rainfall (mm)": null,
+          "Digital Twin Risk": null,
+          "Landslide Score": null
+        }
+      ]
+    }
+  ]
+}

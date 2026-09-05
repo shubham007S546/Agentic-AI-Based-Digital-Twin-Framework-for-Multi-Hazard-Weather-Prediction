@@ -1,0 +1,378 @@
+# =============================================================================
+#  HIMACHAL CLIMATE DIGITAL TWIN — MASTER CONFIGURATION
+#  Covers: raw weather collection (Stage 1) + digital-twin auxiliary
+#          collectors (climate indices, disaster history, hydrology,
+#          infrastructure, population, terrain, vegetation)
+# =============================================================================
+
+project:
+  name:        "Himachal Climate Digital Twin"
+  version:     "2.0"
+  author:      "Shubham"
+  start_year:  2005
+  end_year:    2025
+  timezone:    "Asia/Kolkata"
+
+# Global default date window. Individual collectors can override this
+# under their own block with a `dates:` key if they need a different range
+# (e.g. climate indices going back to 1950, or GPM only from 2000 onward).
+dates:
+  start_date: "2005-01-01"
+  end_date:   "2025-12-31"
+
+# =============================================================================
+#  DISTRICTS
+#  Add new districts here — every collector should read this dict instead of
+#  hardcoding lat/lon, so adding a district doesn't require touching code.
+# =============================================================================
+districts:
+  mandi:
+    state: "Himachal Pradesh"
+    latitude:  31.7081
+    longitude: 76.9318
+    bbox: {lat_min: 31.35, lat_max: 32.10, lon_min: 76.50, lon_max: 77.50}
+  kullu:
+    state: "Himachal Pradesh"
+    latitude:  31.9579
+    longitude: 77.1095
+    bbox: {lat_min: 31.45, lat_max: 32.45, lon_min: 76.70, lon_max: 77.85}
+  chamba:
+    state: "Himachal Pradesh"
+    latitude:  32.5533
+    longitude: 76.1258
+    bbox: {lat_min: 32.00, lat_max: 33.30, lon_min: 75.70, lon_max: 76.80}
+
+active_districts: ["mandi", "kullu", "chamba"]   # collectors loop over this list
+
+# =============================================================================
+#  PATHS  — mirrors the recommended final folder structure
+# =============================================================================
+paths:
+  root:
+    datasets:      "datasets"          # raw per-source weather pulls
+    digital_twin:  "digital_twin"       # curated multi-domain layers
+    logs:          "logs"
+    processed:     "digital_twin/processed"
+    metadata:      "digital_twin/metadata"
+
+  # ---- Stage 1: raw weather sources -----------------------------------
+  weather:
+    imd:        "datasets/source_1_imd"
+    nasa_gpm:   "datasets/source_2_nasa_gpm"
+    datagov:    "datasets/source_3_datagov"
+    era5:       "datasets/source_4_era5"
+    openmeteo:  "datasets/source_5_openmeteo"
+
+  # ---- Digital twin domains --------------------------------------------
+  climate_indices:
+    root: "digital_twin/climate_indices"
+    enso: "digital_twin/climate_indices/ENSO"
+    iod:  "digital_twin/climate_indices/IOD"
+    co2:  "digital_twin/climate_indices/CO2"
+
+  disaster_history:
+    root:       "digital_twin/disaster_history"
+    cloudburst: "digital_twin/disaster_history/Cloudburst"
+    hpsdma:     "digital_twin/disaster_history/HPSDMA"
+    landslide:  "digital_twin/disaster_history/Landslide"
+    reliefweb:  "digital_twin/disaster_history/ReliefWeb"
+
+  hydrology:
+    root:            "digital_twin/hydrology"
+    wris:            "digital_twin/hydrology/WRIS"
+    river_discharge: "digital_twin/hydrology/River_Discharge"
+    river_geojson:   "digital_twin/hydrology/River_GeoJSON"
+
+  infrastructure:
+    root:          "digital_twin/infrastructure"
+    osm:           "digital_twin/infrastructure/OpenStreetMap"
+    roads:         "digital_twin/infrastructure/Roads"
+    villages:      "digital_twin/infrastructure/Villages"
+    schools:       "digital_twin/infrastructure/Schools"
+    hospitals:     "digital_twin/infrastructure/Hospitals"
+
+  population:
+    root:     "digital_twin/population"
+    census:   "digital_twin/population/Census"
+    district: "digital_twin/population/District"
+    village:  "digital_twin/population/Village"
+
+  terrain:
+    root: "digital_twin/terrain"
+    dem:  "digital_twin/terrain/DEM"
+    srtm: "digital_twin/terrain/SRTM"
+    slope: "digital_twin/terrain/Slope"
+
+  vegetation:
+    root:  "digital_twin/vegetation"
+    modis: "digital_twin/vegetation/MODIS"
+    ndvi:  "digital_twin/vegetation/NDVI"
+
+  era5_land:
+    root: "digital_twin/era5_land"        # soil/land branch of ERA5
+
+# =============================================================================
+#  API KEYS  — leave blank here, load via .env / environment variables in
+#  code (os.environ / python-dotenv). Never commit real keys to this file.
+# =============================================================================
+api_keys:
+  datagov:            "${DATAGOV_API_KEY}"
+  nasa_earthdata:      "${NASA_EARTHDATA_TOKEN}"
+  nasa_username:       "${NASA_EARTHDATA_USERNAME}"
+  nasa_password:       "${NASA_EARTHDATA_PASSWORD}"
+  cds_api_key:         "${CDS_API_KEY}"            # Copernicus (ERA5 + ERA5-Land)
+  wris_api_key:        "${WRIS_API_KEY}"
+  reliefweb_appname:   "${RELIEFWEB_APPNAME}"       # ReliefWeb requires an appname, not a key
+  census_api_key:      "${CENSUS_API_KEY}"
+  earthdata_modis_key: "${MODIS_EARTHDATA_TOKEN}"   # MODIS shares NASA Earthdata auth
+
+# =============================================================================
+#  HTTP / RETRY / DOWNLOAD SETTINGS
+#  Shared by every collector so behaviour is consistent and configurable
+#  from one place instead of per-script constants.
+# =============================================================================
+http:
+  timeout_seconds:  120
+  max_retries:        5
+  backoff_factor:     2.0
+  retry_on_status: [429, 500, 502, 503, 504]
+
+download:
+  overwrite:            false
+  workers:               8          # ThreadPoolExecutor max_workers
+  parallel_downloads:    true
+  resume_incomplete:     true       # day/file-level resume skipping
+  chunk_size_bytes:  1048576        # 1 MB streaming chunks
+  verify_ssl:           true
+
+# =============================================================================
+#  WEATHER SOURCES  (Stage 1 — as originally defined)
+# =============================================================================
+weather_sources:
+
+  imd:
+    name:             "IMD Gridded Rainfall (IMDLIB / IMD Pune)"
+    portal_url:       "https://cdsp.imdpune.gov.in"
+    resolution_deg:   0.25
+    variables:        ["rain"]
+    update_frequency: "Daily"
+    enabled:          true
+
+  nasa_gpm:
+    name:             "NASA GPM IMERG Late Precipitation Half-Hourly (3IMERGHHL V07)"
+    product:          "GPM_3IMERGHHL"
+    version:          "07"
+    run_type:         "Late"
+    update_frequency: "Half-Hourly"
+    earthdata_base:   "https://gpm1.gesdisc.eosdis.nasa.gov/data/GPM_L3/GPM_3IMERGHHL.07"
+    cmr_concept_id:   "C2723754845-GES_DISC"
+    cmr_short_name:   "GPM_3IMERGHHL"
+    cmr_version:      "07"
+    cmr_provider:     "GES_DISC"
+    cmr_page_size:    100
+    files_per_day:    48
+    fill_value:       -9999.9
+    hdf5_paths:
+      time:                      "Grid/time"
+      lat:                       "Grid/lat"
+      lon:                       "Grid/lon"
+      precipitation:             "Grid/precipitation"
+      precipitationQualityIndex: "Grid/precipitationQualityIndex"
+    enabled:          true
+
+  datagov:
+    name:             "data.gov.in — Daily District Rainfall NRSC VIC MODEL"
+    base_url:         "https://api.data.gov.in/resource"
+    resource_id:      "6c05cd1b-ed59-40c2-bc31-e314f39c6971"
+    api_filters:
+      State:       "Himachal Pradesh"
+      Agency_name: "NRSC VIC MODEL"
+    district_filter_field: "District"
+    year_filter_field:     "Year"
+    known_columns:
+      date:     ["Date", "date", "DATE", "Rainfall_Date"]
+      district: ["District", "district", "DISTRICT"]
+      state:    ["State", "state", "STATE"]
+      rainfall: ["Rainfall", "rainfall", "RF", "rain_mm", "Daily_Rainfall"]
+      agency:   ["Agency_name", "Agency", "agency"]
+      year:     ["Year", "year", "YEAR"]
+    page_size:        1000
+    update_frequency: "Daily"
+    enabled:          true
+
+  era5:
+    name:             "ERA5 Reanalysis — Copernicus Climate Data Store (Atmosphere)"
+    dataset:          "reanalysis-era5-single-levels"
+    product_type:     "reanalysis"
+    data_format:      "netcdf"
+    variables:
+      - "10m_u_component_of_wind"
+      - "10m_v_component_of_wind"
+      - "2m_dewpoint_temperature"
+      - "2m_temperature"
+      - "mean_sea_level_pressure"
+      - "surface_pressure"
+      - "total_precipitation"
+      - "total_cloud_cover"
+      - "convective_precipitation"
+      - "convective_available_potential_energy"
+    update_frequency: "Hourly"
+    enabled:          true
+
+  openmeteo:
+    name:             "Open-Meteo ERA5 Reanalysis Archive (Supplementary)"
+    base_url:         "https://archive-api.open-meteo.com/v1/archive"
+    forecast_url:     "https://api.open-meteo.com/v1/forecast"
+    variables:
+      hourly:
+        - "precipitation"
+        - "rain"
+        - "snowfall"
+        - "temperature_2m"
+        - "relative_humidity_2m"
+        - "wind_speed_10m"
+        - "wind_gusts_10m"
+        - "wind_direction_10m"
+        - "surface_pressure"
+        - "cloud_cover"
+        - "weather_code"
+    timezone:           "Asia/Kolkata"
+    wind_speed_unit:    "kmh"
+    precipitation_unit: "mm"
+    update_frequency:   "Hourly"
+    enabled:            true
+
+# =============================================================================
+#  DIGITAL TWIN SOURCES  (Stage 2 — auxiliary domains)
+# =============================================================================
+digital_twin_sources:
+
+  era5_land:
+    name:             "ERA5-Land Reanalysis — Copernicus CDS (Soil/Land)"
+    dataset:          "reanalysis-era5-land"
+    product_type:     "reanalysis"
+    data_format:      "netcdf"
+    variables:
+      - "volumetric_soil_water_layer_1"
+      - "volumetric_soil_water_layer_2"
+      - "soil_temperature_level_1"
+      - "skin_temperature"
+      - "total_precipitation"
+      - "runoff"
+      - "snow_depth_water_equivalent"
+    update_frequency: "Hourly"
+    enabled:          true
+
+  wris:
+    name:             "WRIS — Water Resources Information System (India-WRIS)"
+    base_url:         "https://indiawris.gov.in/wris"
+    variables:        ["river_discharge", "river_water_level", "reservoir_storage"]
+    update_frequency: "Daily"
+    enabled:          true
+
+  reliefweb:
+    name:             "ReliefWeb Disaster Reports (OCHA)"
+    base_url:         "https://api.reliefweb.int/v1/disasters"
+    country_filter:   "India"
+    keywords:         ["cloudburst", "flash flood", "landslide", "Himachal Pradesh"]
+    page_size:        100
+    update_frequency: "Event-driven"
+    enabled:          true
+
+  hpsdma:
+    name:             "HPSDMA — HP State Disaster Management Authority"
+    portal_url:       "https://hpsdma.nic.in"
+    variables:        ["cloudburst_events", "landslide_events", "flood_events", "casualties", "damage_reports"]
+    update_frequency: "Event-driven"
+    enabled:          true
+
+  census:
+    name:             "Census of India — District/Village Population"
+    base_url:         "https://api.data.gov.in/resource"
+    variables:        ["population", "households", "literacy_rate", "sex_ratio", "workforce"]
+    granularity:      ["district", "village"]
+    update_frequency: "Decadal (2011, 2021)"
+    enabled:          true
+
+  modis:
+    name:             "MODIS Vegetation Indices (MOD13Q1 / NDVI-EVI)"
+    product:          "MOD13Q1"
+    version:          "061"
+    resolution_m:     250
+    variables:        ["NDVI", "EVI"]
+    earthdata_base:   "https://e4ftl01.cr.usgs.gov/MOLT/MOD13Q1.061"
+    update_frequency: "16-Day"
+    enabled:          true
+
+  climate_indices:
+    name:             "Global Climate Indices (ENSO / IOD / CO2)"
+    update_frequency: "Monthly"
+    enabled:          true
+    indices:
+      enso:
+        source_url: "https://origin.cpc.ncep.noaa.gov/products/analysis_monitoring/ensostuff/oni.ascii.txt"
+        index_name: "ONI"
+      iod:
+        source_url: "https://stateoftheocean.osmc.noaa.gov/sur/ind/dmi.php"
+        index_name: "DMI"
+      co2:
+        source_url: "https://gml.noaa.gov/webdata/ccgg/trends/co2/co2_mm_mlo.txt"
+        index_name: "Mauna Loa Monthly Mean CO2"
+
+  terrain:
+    name:             "SRTM / DEM Terrain Data"
+    product:          "SRTMGL1"
+    resolution_m:     30
+    variables:        ["elevation", "slope", "aspect"]
+    earthdata_base:   "https://e4ftl01.cr.usgs.gov/MEASURES/SRTMGL1.003"
+    update_frequency: "Static"
+    enabled:          true
+
+  infrastructure:
+    name:             "OpenStreetMap Infrastructure Layers"
+    overpass_url:     "https://overpass-api.de/api/interpreter"
+    layers:           ["roads", "villages", "schools", "hospitals"]
+    update_frequency: "Static (periodic refresh)"
+    enabled:          true
+
+# =============================================================================
+#  OUTPUT FORMATS
+# =============================================================================
+output:
+  raw_format:       "csv"
+  processed_format: "parquet"
+  compression:      "snappy"
+  encoding:         "utf-8"
+  overwrite_processed: false
+
+# =============================================================================
+#  LOGGING
+# =============================================================================
+logging:
+  level:               "INFO"
+  format:              "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
+  date_format:         "%Y-%m-%d %H:%M:%S"
+  console:             true
+  save_log:            true
+  global_log_dir:      "logs"
+  rotate_max_bytes:    10485760
+  rotate_backup_count: 5
+
+# =============================================================================
+#  VALIDATION
+#  Collectors can check this block at startup to fail fast on bad config
+#  instead of discovering missing keys mid-download.
+# =============================================================================
+validation:
+  required_env_vars:
+    - "DATAGOV_API_KEY"
+    - "NASA_EARTHDATA_USERNAME"
+    - "NASA_EARTHDATA_PASSWORD"
+    - "CDS_API_KEY"
+  fail_on_missing_dirs:   true
+  create_missing_dirs:    true
+  min_disk_space_gb:      5
+
+# =============================================================================
+# END
+# =============================================================================

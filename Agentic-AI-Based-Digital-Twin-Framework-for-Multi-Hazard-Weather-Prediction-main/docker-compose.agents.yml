@@ -1,0 +1,107 @@
+services:
+  weather_analysis_agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+      args:
+        REQUIREMENTS_PATH: weather_analysis_agent/agents/weather_analysis/requirements.txt
+    container_name: weather_analysis_agent
+    environment:
+      - MODULE_NAME=weather_analysis_agent.agents.weather_analysis.main
+      - PORT=8001
+      - REDIS_URL=redis://redis:6379/0
+    networks:
+      - default
+
+  prediction_agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+      args:
+        REQUIREMENTS_PATH: prediction_agent/agents/prediction/requirements.txt
+    container_name: prediction_agent
+    environment:
+      - MODULE_NAME=prediction_agent.agents.prediction.main
+      - PORT=8002
+      - REDIS_URL=redis://redis:6379/0
+    networks:
+      - default
+
+  alert_risk_agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+      args:
+        REQUIREMENTS_PATH: alert_risk_agent/agents/alert_risk/requirements.txt
+    container_name: alert_risk_agent
+    environment:
+      - MODULE_NAME=alert_risk_agent.agents.alert_risk.main
+      - PORT=8003
+      - REDIS_URL=redis://redis:6379/0
+      - PREDICTION_AGENT_URL=http://prediction_agent:8002
+      - WEATHER_AGENT_URL=http://weather_analysis_agent:8001
+      # Groq LLM
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - GROQ_MODEL=openai/gpt-oss-120b
+    networks:
+      - default
+
+  digital_twin_agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+      args:
+        REQUIREMENTS_PATH: digital_twin_agent/agents/digital_twin/requirements.txt
+    container_name: digital_twin_agent
+    environment:
+      - MODULE_NAME=digital_twin_agent.agents.digital_twin.main
+      - PORT=8004
+      - REDIS_URL=redis://redis:6379/0
+    networks:
+      - default
+
+  orchestrator_agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+      args:
+        REQUIREMENTS_PATH: orchestrator_agent/agents/orchestrator/requirements.txt
+    container_name: orchestrator_agent
+    environment:
+      - MODULE_NAME=orchestrator_agent.agents.orchestrator.main
+      - PORT=8005
+      - REDIS_URL=redis://redis:6379/0
+      # Internal Docker DNS names for cross-container calls
+      - WEATHER_AGENT_URL=http://weather_analysis_agent:8001
+      - PREDICTION_AGENT_URL=http://prediction_agent:8002
+      - ALERT_AGENT_URL=http://alert_risk_agent:8003
+      - DIGITAL_TWIN_AGENT_URL=http://digital_twin_agent:8004
+      - REPORT_AGENT_URL=http://report_agent:8006
+      # Groq LLM
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - GROQ_MODEL=openai/gpt-oss-120b
+    networks:
+      - default
+
+  report_agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+      args:
+        REQUIREMENTS_PATH: report_agent/agents/report/requirements.txt
+    container_name: report_agent
+    environment:
+      - MODULE_NAME=report_agent.agents.report.main
+      - PORT=8006
+      - REDIS_URL=redis://redis:6379/0
+      - WEATHER_AGENT_URL=http://weather_analysis_agent:8001
+      - PREDICTION_AGENT_URL=http://prediction_agent:8002
+      - ALERT_AGENT_URL=http://alert_risk_agent:8003
+      - DIGITAL_TWIN_AGENT_URL=http://digital_twin_agent:8004
+    networks:
+      - default
+
+networks:
+  default:
+    name: weather-net
+    external: true

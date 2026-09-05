@@ -1,0 +1,17 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# The requirements might be deep inside the folder (e.g., agents/digital_twin/requirements.txt)
+# Wait, actually, let's just copy everything and find requirements.txt
+COPY . .
+
+# Since we don't know the exact path of requirements.txt, we can just install from the specific folder.
+# The user will specify the REQUIREMENTS_PATH as a build arg.
+ARG REQUIREMENTS_PATH
+RUN pip install --no-cache-dir -r ${REQUIREMENTS_PATH}
+
+ENV MODULE_NAME=""
+ENV PORT=8000
+
+CMD ["sh", "-c", "uvicorn ${MODULE_NAME}:app --host 0.0.0.0 --port ${PORT}"]

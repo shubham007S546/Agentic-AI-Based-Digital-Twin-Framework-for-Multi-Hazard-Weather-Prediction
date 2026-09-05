@@ -1,0 +1,11 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+langgraph>=0.1
+langchain-groq>=0.1
+langchain-core>=0.2
+python-dotenv>=1.0
+requests>=2.31.0
+
+# optional, only needed if you set REDIS_URL for persistent conversation memory
+redis>=5.0

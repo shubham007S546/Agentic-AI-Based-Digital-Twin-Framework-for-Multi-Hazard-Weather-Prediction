@@ -1,0 +1,63 @@
+{
+  "run_id": "20260721T103013Z",
+  "run_type": "manual",
+  "timestamp": "2026-07-21T10:38:36.214460Z",
+  "stats": {
+    "run_id": "20260721T103013Z",
+    "run_type": "manual",
+    "started_at": "2026-07-21T10:30:13.816521Z",
+    "finished_at": "2026-07-21T10:38:36.213499Z",
+    "elapsed_seconds": 502.396978,
+    "targets": [
+      "project",
+      "government",
+      "research",
+      "datasets",
+      "news"
+    ],
+    "force": false,
+    "dry_run": false,
+    "documents_processed": 1027,
+    "chunks_created": 12844,
+    "embeddings_created": 12844,
+    "duplicates_removed": 8,
+    "errors": 1027,
+    "per_collection": {
+      "project": {
+        "documents": 1027,
+        "chunks": 12844,
+        "embeddings": 12844,
+        "duplicates": 8,
+        "errors": 1351
+      },
+      "government": {
+        "documents": 0,
+        "chunks": 0,
+        "embeddings": 0,
+        "duplicates": 0,
+        "errors": 0
+      },
+      "research": {
+        "documents": 0,
+        "chunks": 0,
+        "embeddings": 0,
+        "duplicates": 0,
+        "errors": 0
+      },
+      "datasets": {
+        "documents": 0,
+        "chunks": 0,
+        "embeddings": 0,
+        "duplicates": 0,
+        "errors": 0
+      },
+      "news": {
+        "documents": 0,
+        "chunks": 0,
+        "embeddings": 0,
+        "duplicates": 0,
+        "errors": 0
+      }
+    }
+  }
+}
