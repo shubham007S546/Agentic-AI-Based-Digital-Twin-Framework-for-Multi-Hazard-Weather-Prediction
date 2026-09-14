@@ -58,12 +58,15 @@ class KnowledgePipeline:
 
     def _wrap_for_chunking(self, document: ProcessingDocument) -> Any:
         try:
-            from RAG_project.loaders.pdf_loader import Document
-        except Exception:
-            @dataclass
-            class DocumentWrapper:
-                page_content: str
-                metadata: Dict[str, Any]
+            from RAG.loaders.pdf_loader import Document
+        except ImportError:
+            try:
+                from RAG_project.loaders.pdf_loader import Document
+            except Exception:
+                @dataclass
+                class DocumentWrapper:
+                    page_content: str
+                    metadata: Dict[str, Any]
 
-            return DocumentWrapper(page_content=document.page_content, metadata=document.metadata)
+                return DocumentWrapper(page_content=document.page_content, metadata=document.metadata)
         return Document(page_content=document.page_content, metadata=document.metadata)

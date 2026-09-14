@@ -21,9 +21,20 @@ Wraps SentenceTransformer with the handling a RAG pipeline actually needs:
 """
 import sys
 from pathlib import Path
-sys.path.append(str(Path(__file__).resolve().parent.parent))
-import numpy as np
 
+# Safeguard against mismatched torchvision crashing sentence_transformers
+if "torchvision" not in sys.modules:
+    try:
+        import torchvision
+    except Exception:
+        sys.modules["torchvision"] = None
+
+_rag_root = str(Path(__file__).resolve().parent.parent)
+if _rag_root in sys.path:
+    sys.path.remove(_rag_root)
+sys.path.insert(0, _rag_root)
+
+import numpy as np
 from sentence_transformers import SentenceTransformer
 
 from config import EMBEDDING_MODEL

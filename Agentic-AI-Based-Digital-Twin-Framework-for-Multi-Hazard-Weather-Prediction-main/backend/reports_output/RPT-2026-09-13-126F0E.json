@@ -1,0 +1,40 @@
+{
+  "metadata": {
+    "report_id": "RPT-2026-09-13-126F0E",
+    "report_type": "daily_weather",
+    "format": "json",
+    "version": 1,
+    "generated_at": "2026-09-13T07:50:26.867466+00:00",
+    "districts": [
+      "Mandi"
+    ],
+    "data_sources_used": [],
+    "data_completeness": 0.0
+  },
+  "sections": [
+    {
+      "title": "Summary",
+      "kind": "text",
+      "content": "No significant anomalies, extreme events, or elevated risk detected in available data."
+    },
+    {
+      "title": "Key Insights",
+      "kind": "text",
+      "content": "- No significant anomalies, extreme events, or elevated risk detected in available data."
+    },
+    {
+      "title": "District Metrics",
+      "kind": "table",
+      "content": [
+        {
+          "District": "Mandi",
+          "Temp (C)": null,
+          "Humidity (%)": null,
+          "Predicted Rainfall (mm)": null,
+          "Digital Twin Risk": null,
+          "Landslide Score": null
+        }
+      ]
+    }
+  ]
+}

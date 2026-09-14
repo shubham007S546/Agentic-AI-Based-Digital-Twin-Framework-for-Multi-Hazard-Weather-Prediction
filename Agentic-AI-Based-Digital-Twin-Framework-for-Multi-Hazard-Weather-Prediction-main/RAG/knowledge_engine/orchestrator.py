@@ -47,9 +47,12 @@ class KnowledgeEngine:
     def _load_embedding_model(self):
         if self.embedder is None:
             try:
-                from RAG_project.utils.singletons import get_embedding_model
-            except ImportError as exc:
-                raise RuntimeError("Unable to import RAG_project embedding model.") from exc
+                from RAG.utils.singletons import get_embedding_model
+            except ImportError:
+                try:
+                    from RAG_project.utils.singletons import get_embedding_model
+                except ImportError as exc:
+                    raise RuntimeError("Unable to import RAG embedding model.") from exc
             self.embedder = get_embedding_model()
         return self.embedder
 

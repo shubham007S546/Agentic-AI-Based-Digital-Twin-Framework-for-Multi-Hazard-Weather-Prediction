@@ -14,7 +14,17 @@ PDFs changed, run `python build_index.py` first.
 import sys
 from pathlib import Path
 
-sys.path.append(str(Path(__file__).resolve().parent))
+_rag_root = str(Path(__file__).resolve().parent)
+if _rag_root in sys.path:
+    sys.path.remove(_rag_root)
+sys.path.insert(0, _rag_root)
+
+# Safeguard against torchvision::nms mismatch
+if "torchvision" not in sys.modules:
+    try:
+        import torchvision
+    except Exception:
+        sys.modules["torchvision"] = None
 
 from retriever.hybrid import HybridRetriever
 from chains.rag_chain import RAGChain

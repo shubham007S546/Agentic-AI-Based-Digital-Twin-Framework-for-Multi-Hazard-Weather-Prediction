@@ -9,94 +9,67 @@ import {
   Waves,
   Mountain,
   Droplets,
-  Layers,
-  Leaf,
-  Building2,
-  Users,
   Satellite,
-  Thermometer,
+  Radio,
   Bot,
   BarChart3,
   Brain,
-  FlaskConical,
   FileText,
-  Settings,
-  Database,
   History,
   Siren,
-  BellRing,
-  UserCircle,
-  ShieldCheck,
-  Radio,
 } from 'lucide-react'
 import type { NavSection } from '@/types'
 
 export const NAV_SECTIONS: NavSection[] = [
   {
-    title: 'Overview',
+    title: 'Command',
     items: [
-      { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-      { label: 'GIS Map', href: '/map', icon: Map },
+      { label: 'Situational Dashboard', href: '/dashboard', icon: LayoutDashboard },
+      { label: 'GIS Risk Map', href: '/map', icon: Map },
       { label: 'Digital Twin', href: '/digital-twin', icon: Globe },
     ],
   },
   {
-    title: 'Weather',
+    title: 'Atmospheric',
     items: [
       { label: 'Live Weather', href: '/weather', icon: CloudSun },
-      { label: 'Forecast', href: '/forecast', icon: CalendarClock },
+      { label: 'Multi-Day Forecast', href: '/forecast', icon: CalendarClock },
     ],
   },
   {
-    title: 'Hazard Prediction',
+    title: 'Hazard Intelligence',
     items: [
-      { label: 'Rainfall', href: '/rainfall', icon: CloudRain },
+      { label: 'Rainfall Prediction', href: '/rainfall', icon: CloudRain },
       { label: 'Cloudburst', href: '/cloudburst', icon: CloudLightning },
-      { label: 'Flood', href: '/flood', icon: Waves },
+      { label: 'Flash Flood', href: '/flood', icon: Waves },
       { label: 'Landslide', href: '/landslide', icon: Mountain },
     ],
   },
   {
-    title: 'Earth Systems',
+    title: 'Earth Observation',
     items: [
       { label: 'Hydrology', href: '/hydrology', icon: Droplets },
-      { label: 'Terrain', href: '/terrain', icon: Layers },
-      { label: 'Vegetation', href: '/vegetation', icon: Leaf },
-      { label: 'Infrastructure', href: '/infrastructure', icon: Building2 },
-      { label: 'Population', href: '/population', icon: Users },
-      { label: 'Satellite', href: '/satellite', icon: Satellite },
-      { label: 'Climate', href: '/climate', icon: Thermometer },
+      { label: 'Satellite Imagery', href: '/satellite', icon: Satellite },
     ],
   },
   {
-    title: 'Intelligence',
+    title: 'AI & Models',
     items: [
-      { label: 'Agent Room', href: '/agents', icon: Radio },
+      { label: 'Agent Orchestration', href: '/agents', icon: Radio },
       { label: 'AI Assistant', href: '/assistant', icon: Bot },
-      { label: 'Model Analytics', href: '/analytics', icon: BarChart3 },
+      { label: 'Model Performance', href: '/analytics', icon: BarChart3 },
       { label: 'Explainable AI', href: '/explainable-ai', icon: Brain },
-      { label: 'Research Dashboard', href: '/research', icon: FlaskConical },
     ],
   },
   {
-    title: 'Data',
-    items: [
-      { label: 'Dataset Explorer', href: '/datasets', icon: Database },
-      { label: 'Disaster History', href: '/history', icon: History },
-    ],
-  },
-  {
-    title: 'Platform',
+    title: 'Operations',
     items: [
       { label: 'Alert Centre', href: '/alerts', icon: Siren },
-      { label: 'Notifications', href: '/notifications', icon: BellRing },
+      { label: 'Disaster History', href: '/history', icon: History },
       { label: 'Reports', href: '/reports', icon: FileText },
-      { label: 'Administration', href: '/admin', icon: ShieldCheck },
-      { label: 'Profile', href: '/profile', icon: UserCircle },
-      { label: 'Settings', href: '/settings', icon: Settings },
     ],
   },
 ]
 
 export const PLATFORM_NAME = 'VARUNA'
-export const PLATFORM_TAGLINE = 'Disaster Intelligence Platform'
+export const PLATFORM_TAGLINE = 'Multi-Hazard Intelligence'

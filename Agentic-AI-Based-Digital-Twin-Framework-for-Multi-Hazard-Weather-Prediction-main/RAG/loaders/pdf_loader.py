@@ -36,7 +36,7 @@ except ImportError:
 
 from config import PDF_DIR, BASE_DIR
 from utils.logger import logger
-from RAG_project.utils.text_cleaner import clean_text
+from utils.text_cleaner import clean_text
 
 
 # -------------------------------

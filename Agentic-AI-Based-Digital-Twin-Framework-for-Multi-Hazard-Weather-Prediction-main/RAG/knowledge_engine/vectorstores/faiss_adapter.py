@@ -13,9 +13,12 @@ class FaissAdapter(VectorStoreAdapter):
         if self._loaded:
             return
         try:
-            from RAG_project.vectorstore.faiss_db import FAISSVectorStore
-        except ImportError as exc:
-            raise RuntimeError("Unable to import the existing FAISS vector store implementation.") from exc
+            from RAG.vectorstore.faiss_db import FAISSVectorStore
+        except ImportError:
+            try:
+                from RAG_project.vectorstore.faiss_db import FAISSVectorStore
+            except ImportError as exc:
+                raise RuntimeError("Unable to import the existing FAISS vector store implementation.") from exc
         self.vector_db = FAISSVectorStore()
         self._loaded = True
 

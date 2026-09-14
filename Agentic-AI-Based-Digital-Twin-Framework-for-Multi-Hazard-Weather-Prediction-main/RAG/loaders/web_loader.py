@@ -31,7 +31,7 @@ from urllib.parse import urlparse
 
 from loaders.pdf_loader import Document
 from utils.logger import logger
-from RAG_project.utils.text_cleaner import clean_text
+from utils.text_cleaner import clean_text
 
 try:
     import trafilatura

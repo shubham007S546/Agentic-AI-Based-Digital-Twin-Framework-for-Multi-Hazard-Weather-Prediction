@@ -16,6 +16,75 @@ export interface RagHealth {
   reason?: string
 }
 
+export interface PromptSpecification {
+  agent_name: string
+  role_description: string
+  system_prompt: string
+  expected_answer_schema: Record<string, string>
+  constraints: string[]
+}
+
+export interface AgentExecutionReport {
+  agent_name: string
+  agent_role: string
+  execution_id: string
+  timestamp: string
+  duration_ms: number
+  status: string
+  task_assigned: Record<string, any>
+  actions_taken: string[]
+  prompt_specification?: PromptSpecification
+  final_answer: Record<string, any>
+  summary_markdown: string
+}
+
+export interface TripPlanResponse {
+  agent: string
+  status: string
+  duration_seconds: number
+  result_summary: {
+    source: string
+    destination: string
+    way: string
+    distance_km: number
+    duration: string
+    cost: {
+      fuel_cost_inr: number
+      fuel_liters_estimated: number
+      toll_charges_inr: number
+      total_self_drive_inr: number
+      taxi_estimate_inr: number
+      bus_fare_inr: number
+      cost_summary_range: string
+    }
+    hazard_level: string
+  }
+  agent_report: AgentExecutionReport
+  final_answer: {
+    source: string
+    destination: string
+    way: string
+    distance_km: number
+    estimated_duration: string
+    estimated_cost: Record<string, any>
+    route_hazard_level: string
+    hazard_breakdown: Array<{
+      location: string
+      hazard_type: string
+      severity: string
+      notes: string
+    }>
+    alternative_ways: Array<{
+      way: string
+      distance_km: number
+      estimated_duration: string
+      hazard_level: string
+      notes: string
+    }>
+    travel_advisories: string[]
+  }
+}
+
 export async function getAgentHealth(): Promise<AgentHealth[]> {
   const response = await apiFetch<{ data: AgentHealth[] }>('/agents/health', {
     cache: 'no-store',
@@ -25,6 +94,67 @@ export async function getAgentHealth(): Promise<AgentHealth[]> {
 
 export async function getRagHealth(): Promise<RagHealth> {
   const response = await apiFetch<{ data: RagHealth }>('/agents/rag/health', {
+    cache: 'no-store',
+  })
+  return response.data
+}
+
+export async function getAgentPrompts(): Promise<Record<string, PromptSpecification>> {
+  const response = await apiFetch<{ data: Record<string, PromptSpecification> }>('/agents/prompts', {
+    cache: 'no-store',
+  })
+  return response.data
+}
+
+export async function planTripRoute(payload: {
+  source: string
+  destination: string
+  travel_mode?: string
+  fuel_type?: string
+  departure_time?: string
+}): Promise<TripPlanResponse> {
+  const response = await apiFetch<{ data: TripPlanResponse }>('/agents/trip/plan', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    cache: 'no-store',
+  })
+  return response.data
+}
+
+export async function runAgentSync(
+  agentName: string,
+  payload?: Record<string, any>
+): Promise<{
+  agent: string
+  status: string
+  duration_seconds: number
+  result_summary: Record<string, any>
+  agent_report?: AgentExecutionReport
+  final_answer?: Record<string, any>
+}> {
+  const response = await apiFetch<{ data: any }>(`/agents/${agentName}/run`, {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+    cache: 'no-store',
+  })
+  return response.data
+}
+
+export async function queryOrchestrator(
+  query: string,
+  context?: Record<string, any>
+): Promise<{
+  session_id: string
+  response: string
+  intent: Record<string, any>
+  tools_used: any[]
+  agent_reports: Record<string, AgentExecutionReport>
+  notifications: any[]
+  errors: string[]
+}> {
+  const response = await apiFetch<{ data: any }>('/agents/orchestrator/query', {
+    method: 'POST',
+    body: JSON.stringify({ query, context: context || {}, session_id: 'web-session' }),
     cache: 'no-store',
   })
   return response.data

@@ -42,9 +42,7 @@ def _get_agent_manager():
     "",
     summary="List all registered agents",
 )
-async def list_agents(
-    token_data: CurrentUserToken,
-) -> ApiResponse[list[dict]]:
+async def list_agents() -> ApiResponse[list[dict]]:
     """
     Returns all registered agents with their name, version, description,
     total executions, and last execution timestamp.
@@ -60,9 +58,7 @@ async def list_agents(
     "/health",
     summary="Full agent system health report",
 )
-async def agents_health(
-    token_data: CurrentUserToken,
-) -> ApiResponse[dict]:
+async def agents_health() -> ApiResponse[list[dict]]:
     """
     Returns per-agent health status including execution counts, failure rates,
     and stale detection (no execution in > 60 minutes).
@@ -76,9 +72,7 @@ async def agents_health(
     "/rag/health",
     summary="Check persisted RAG index readiness",
 )
-async def rag_health(
-    token_data: CurrentUserToken,
-) -> ApiResponse[dict[str, Any]]:
+async def rag_health() -> ApiResponse[dict[str, Any]]:
     """Report whether the persisted FAISS index can serve assistant queries."""
     from RAG.config import VECTOR_DB_DIR
 
@@ -109,6 +103,69 @@ async def rag_health(
         return ApiResponse(data=data, message="RAG index is invalid.")
 
     return ApiResponse(data=data, message="RAG index is ready.")
+
+
+# ── Agent prompts & schema contracts ─────────────────────────────────────────
+
+@router.get(
+    "/prompts",
+    summary="Get system prompts, answer schemas, and contracts for all agents",
+)
+async def get_agent_prompts() -> ApiResponse[dict[str, Any]]:
+    """
+    Returns the defined system prompt, expected answer schema, and behavioral
+    constraints for each agent in the platform (including TripAgent, WeatherAgent,
+    PredictionAgent, AlertAgent, DigitalTwinAgent, etc.).
+    """
+    from app.agents.agent_prompts import AGENT_PROMPTS
+    return ApiResponse(
+        data={k: v.model_dump() for k, v in AGENT_PROMPTS.items()},
+        message=f"Retrieved prompt specifications for {len(AGENT_PROMPTS)} agents.",
+    )
+
+
+class TripPlanRequest(BaseModel):
+    source: str = Field(default="Mandi", description="Origin town or district")
+    destination: str = Field(default="Manali", description="Destination town or district")
+    travel_mode: str = Field(default="car", description="Travel mode: car | taxi | bus")
+    fuel_type: str = Field(default="petrol", description="Fuel type: petrol | diesel | ev")
+    departure_time: Optional[str] = Field(default="Immediate", description="Departure window")
+    rainfall_mm: Optional[float] = Field(default=None, description="Optional rainfall override along route")
+
+
+@router.post(
+    "/trip/plan",
+    summary="Plan a safe mountain trip route with costs and hazard evaluation",
+)
+async def plan_trip_route(
+    payload: TripPlanRequest,
+    token_data: CurrentUserToken,
+) -> ApiResponse[dict]:
+    """
+    Executes the Trip & Mountain Route Hazard Advisory Agent directly.
+    Calculates source, destination, recommended corridor/way, itemized costs
+    (fuel, tolls, taxi, bus), route hazard levels, and alternative bypass passes.
+    Returns the full AgentExecutionReport.
+    """
+    agent_mgr = _get_agent_manager()
+    result = await agent_mgr.execute(
+        agent_name=AgentName.TRIP_ADVISORY,
+        payload=payload.model_dump(),
+        trigger=AgentTrigger.MANUAL,
+        triggered_by=token_data.user_id,
+    )
+
+    return ApiResponse(
+        data={
+            "agent": AgentName.TRIP_ADVISORY.value,
+            "status": result.status.value,
+            "duration_seconds": round(result.duration_seconds or 0, 3),
+            "result_summary": result.result_summary,
+            "agent_report": result.agent_report,
+            "final_answer": result.result_summary.get("final_answer", {}),
+        },
+        message=f"Mountain route plan generated from {payload.source} to {payload.destination}.",
+    )
 
 
 # ── Synchronous agent execution (admin, blocking) ─────────────────────────────
@@ -152,6 +209,7 @@ async def run_agent_sync(
             "status": result.status.value,
             "duration_seconds": round(result.duration_seconds or 0, 3),
             "result_summary": result.result_summary,
+            "agent_report": result.agent_report,
             "error": result.error_message,
         },
         message=f"Agent '{name_enum.value}' execution finished with status: {result.status.value}",
@@ -274,14 +332,44 @@ async def orchestrator_query(
                 message="Orchestrator response received.",
             )
     except httpx.ConnectError:
-        return ApiResponse(
-            success=False,
-            data={},
-            message=(
-                f"Orchestrator Agent is not reachable at {upstream}. "
-                "Start it with: uvicorn orchestrator_agent.agents.orchestrator.main:app --port 8005"
-            ),
-        )
+        # Seamless In-Process Fallback via LangGraph Orchestrator
+        try:
+            from agents.orchestrator.graph import orchestrator_graph
+            from agents.orchestrator.memory import conversation_memory
+            from agents.orchestrator.schemas import ToolCallRecord
+
+            history = conversation_memory.get_history(payload.session_id)
+            initial_state = {
+                "session_id": payload.session_id,
+                "user_query": payload.query,
+                "user_context": payload.context,
+                "history": history,
+                "errors": [],
+            }
+            final_state = orchestrator_graph.invoke(initial_state)
+            data = {
+                "session_id": payload.session_id,
+                "response": final_state.get("final_response", ""),
+                "intent": final_state.get("intent", {}),
+                "tools_used": [ToolCallRecord(**r).model_dump() for r in final_state.get("tool_call_records", [])],
+                "agent_reports": final_state.get("agent_reports", {}),
+                "notifications": final_state.get("notifications", []),
+                "errors": final_state.get("errors", []),
+                "source": "in_process_orchestrator",
+            }
+            return ApiResponse(
+                data=data,
+                message="Orchestrator response generated via in-process LangGraph engine.",
+            )
+        except Exception as fallback_err:
+            return ApiResponse(
+                success=False,
+                data={},
+                message=(
+                    f"Orchestrator Agent is not reachable at {upstream} "
+                    f"and in-process fallback error: {str(fallback_err)}"
+                ),
+            )
     except Exception as exc:
         return ApiResponse(
             success=False,

@@ -175,54 +175,92 @@ export function LiveDistrictRisk({
 
       {/* District cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-        {predictions.map((p) => (
-          <div
-            key={`${p.district}-${p.hazard}`}
-            className="rounded-lg border border-border/50 p-4 flex flex-col gap-2 bg-secondary/20 hover:bg-secondary/40 transition-colors"
-          >
-            {/* District name + risk badge */}
-            <div className="flex items-center justify-between">
-              <span className="font-medium text-sm truncate max-w-[7rem]">{p.district}</span>
-              <RiskBadge risk={p.risk} />
-            </div>
-
-            {/* Rainfall reading */}
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <CloudRain className={`size-4 shrink-0 ${iconClass}`} aria-hidden="true" />
-              <span className="tabular-nums text-lg font-semibold text-foreground">
-                {p.predicted_rainfall_mm != null ? p.predicted_rainfall_mm.toFixed(2) : '—'}
-              </span>
-              <span className="text-[11px]">mm/hr</span>
-            </div>
-
-            {/* Probability bar */}
-            <div className="flex items-center gap-2 mt-1">
-              <div
-                className="h-1.5 flex-1 rounded-full bg-secondary overflow-hidden"
-                role="progressbar"
-                aria-valuenow={p.probability}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-label={`${p.district} probability ${p.probability}%`}
-              >
-                <div
-                  className={probabilityBarClass(p.probability)}
-                  style={{ width: `${p.probability}%` }}
-                />
+        {predictions.map((p) => {
+          const isExtreme = p.is_extreme_event || p.risk === 'severe'
+          return (
+            <div
+              key={`${p.district}-${p.hazard}`}
+              className={`rounded-lg border p-4 flex flex-col gap-2 transition-all ${
+                isExtreme
+                  ? 'border-destructive/60 bg-destructive/10 ring-1 ring-destructive/40 shadow-lg shadow-destructive/10'
+                  : 'border-border/50 bg-secondary/20 hover:bg-secondary/40'
+              }`}
+            >
+              {/* District name + risk badge */}
+              <div className="flex items-center justify-between">
+                <span className="font-medium text-sm truncate max-w-[7rem]">{p.district}</span>
+                <RiskBadge risk={p.risk} />
               </div>
-              <span className="tabular-nums text-xs text-muted-foreground shrink-0">
-                {p.probability}%
-              </span>
-            </div>
 
-            {/* Confidence */}
-            {p.confidence != null && (
-              <p className="text-[10px] text-muted-foreground">
-                conf. {p.confidence}%
-              </p>
-            )}
-          </div>
-        ))}
+              {/* IMD Category badge if present */}
+              {p.imd_category && (
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider ${
+                      p.imd_color_code === 'red'
+                        ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                        : p.imd_color_code === 'orange'
+                        ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                        : p.imd_color_code === 'yellow'
+                        ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
+                        : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                    }`}
+                  >
+                    IMD: {p.imd_category.replace(/_/g, ' ')}
+                  </span>
+                  {p.is_extreme_event && (
+                    <span className="text-[10px] font-bold text-destructive animate-pulse">
+                      ALERT
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Rainfall reading */}
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <CloudRain className={`size-4 shrink-0 ${iconClass}`} aria-hidden="true" />
+                <span className="tabular-nums text-lg font-semibold text-foreground">
+                  {p.predicted_rainfall_mm != null ? p.predicted_rainfall_mm.toFixed(2) : '—'}
+                </span>
+                <span className="text-[11px]">mm/24h</span>
+              </div>
+
+              {/* Probability bar */}
+              <div className="flex items-center gap-2 mt-1">
+                <div
+                  className="h-1.5 flex-1 rounded-full bg-secondary overflow-hidden"
+                  role="progressbar"
+                  aria-valuenow={p.probability}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label={`${p.district} probability ${p.probability}%`}
+                >
+                  <div
+                    className={probabilityBarClass(p.probability)}
+                    style={{ width: `${p.probability}%` }}
+                  />
+                </div>
+                <span className="tabular-nums text-xs text-muted-foreground shrink-0">
+                  {p.probability}%
+                </span>
+              </div>
+
+              {/* Action / context footnote */}
+              {p.action_recommended && (
+                <p className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5" title={p.action_recommended}>
+                  {p.action_recommended}
+                </p>
+              )}
+
+              {/* Confidence */}
+              {p.confidence != null && (
+                <p className="text-[10px] text-muted-foreground/70">
+                  conf. {p.confidence}%
+                </p>
+              )}
+            </div>
+          )
+        })}
       </div>
     </GlassCard>
   )

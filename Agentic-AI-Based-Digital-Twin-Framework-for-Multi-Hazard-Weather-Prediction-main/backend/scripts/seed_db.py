@@ -40,8 +40,6 @@ async def seed():
                 hashed_password=get_password_hash(admin_password),
                 full_name="Dr. Rajat Sharma",
                 role=UserRole.ADMIN,
-                organization="IIT Mandi",
-                department="SCEE",
                 is_active=True,
                 is_verified=True,
             )

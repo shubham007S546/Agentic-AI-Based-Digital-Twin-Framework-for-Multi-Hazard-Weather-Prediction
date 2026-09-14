@@ -13,8 +13,8 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /build
 
-# Install uv for blazingly fast dependency resolution
-RUN pip install uv
+# Install uv and build backends for blazingly fast offline-safe dependency resolution
+RUN pip install uv poetry-core setuptools
 
 # Copy only what's needed for dependency resolution
 COPY backend/pyproject.toml .
@@ -25,7 +25,7 @@ COPY RAG/requirements.txt ./RAG/requirements.txt
 # stack. Production builds can opt into the complete dependency manifest with
 # INSTALL_ML=true.
 ARG INSTALL_ML=false
-RUN uv pip install --system --no-cache -e . --no-deps \
+RUN uv pip install --system --no-cache --no-build-isolation -e . --no-deps \
     && if [ "$INSTALL_ML" = "true" ]; then \
          uv pip install --system --no-cache -e . -r RAG/requirements.txt; \
        else \

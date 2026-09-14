@@ -122,9 +122,12 @@ def _read_rtf(path: Path) -> str:
 
 def _read_pdf(path: Path) -> str:
     try:
-        from RAG_project.loaders.pdf_loader import PDFLoader
-    except Exception as exc:
-        raise ImportError("PDF support requires the existing RAG_project PDF loader and its dependencies.") from exc
+        from RAG.loaders.pdf_loader import PDFLoader
+    except ImportError:
+        try:
+            from RAG_project.loaders.pdf_loader import PDFLoader
+        except Exception as exc:
+            raise ImportError("PDF support requires the RAG PDF loader and its dependencies.") from exc
 
     loader = PDFLoader(path.parent)
     pages = loader.load_pdf(path)

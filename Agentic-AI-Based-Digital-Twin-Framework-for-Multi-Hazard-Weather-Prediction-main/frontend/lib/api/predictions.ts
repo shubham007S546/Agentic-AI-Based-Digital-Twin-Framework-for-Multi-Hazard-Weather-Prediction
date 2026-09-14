@@ -16,6 +16,15 @@ export interface HazardPrediction {
   predicted_at?: string
   predicted_rainfall_mm?: number
   model?: string
+  imd_category?: string
+  imd_color_code?: string
+  is_extreme_event?: boolean
+  imd_threshold_description?: string
+  action_recommended?: string
+  cloudburst_probability?: number
+  landslide_risk_score?: number
+  gauge_utilization_pct?: number
+  river?: string
 }
 
 export interface LandslideZone {

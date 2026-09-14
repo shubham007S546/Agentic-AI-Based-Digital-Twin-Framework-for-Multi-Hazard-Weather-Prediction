@@ -10,10 +10,9 @@ import { apiFetch } from '@/lib/api/client'
 const BASEMAP_TILES: Record<string, { tiles: string[]; attribution: string }> = {
   dark: {
     tiles: [
-      'https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png',
-      'https://cartodb-basemaps-a.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png',
+      'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
     ],
-    attribution: '© OpenStreetMap contributors © CARTO',
+    attribution: 'Esri, HERE, Garmin, © OpenStreetMap contributors, and the GIS user community',
   },
   satellite: {
     tiles: [

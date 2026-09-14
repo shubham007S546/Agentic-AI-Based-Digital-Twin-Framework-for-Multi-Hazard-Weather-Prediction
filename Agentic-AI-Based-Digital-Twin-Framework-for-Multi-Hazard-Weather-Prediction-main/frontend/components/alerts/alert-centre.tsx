@@ -1,12 +1,24 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import { Siren, MessageSquare, Radio, Smartphone, CheckCheck } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Siren,
+  MessageSquare,
+  Radio,
+  Smartphone,
+  CheckCheck,
+  RefreshCw,
+  Wifi,
+  WifiOff,
+} from 'lucide-react'
 import { GlassCard } from '@/components/shared/glass-card'
 import { RiskBadge } from '@/components/shared/risk-badge'
 import { ALERTS } from '@/lib/mock/data'
-import type { RiskLevel } from '@/types'
+import { getActiveAlerts } from '@/lib/api/alerts'
+import type { AlertItem, RiskLevel } from '@/types'
 import { cn } from '@/lib/utils'
+
+// ── Constants ────────────────────────────────────────────────────────────────
 
 const SEVERITIES: ('all' | RiskLevel)[] = ['all', 'severe', 'high', 'moderate', 'low']
 
@@ -17,30 +29,138 @@ const CHANNELS = [
   { name: 'Siren network', icon: Siren, reach: '86 villages (Beas basin)', status: 'partial' },
 ]
 
+const REFRESH_INTERVAL_MS = 60_000   // auto-refresh every 60 seconds
+const STALE_THRESHOLD_MS  = 90_000   // data older than 90s is shown as stale
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
 function timeAgo(iso: string) {
-  const diffMs = new Date('2026-07-15T07:30:00Z').getTime() - new Date(iso).getTime()
-  const mins = Math.round(diffMs / 60000)
+  const diffMs = Date.now() - new Date(iso).getTime()
+  const mins = Math.round(diffMs / 60_000)
+  if (mins < 1)  return 'just now'
   if (mins < 60) return `${mins} min ago`
   const hrs = Math.round(mins / 60)
-  if (hrs < 24) return `${hrs} h ago`
+  if (hrs < 24)  return `${hrs} h ago`
   return `${Math.round(hrs / 24)} d ago`
 }
 
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+interface StatusBarProps {
+  lastRefreshed: Date | null
+  isLoading: boolean
+  isLive: boolean
+  isStale: boolean
+  onRefresh: () => void
+}
+
+function StatusBar({ lastRefreshed, isLoading, isLive, isStale, onRefresh }: StatusBarProps) {
+  return (
+    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+      {isLive ? (
+        <Wifi className="size-3 text-success shrink-0" aria-hidden="true" />
+      ) : (
+        <WifiOff className="size-3 text-warning shrink-0" aria-hidden="true" />
+      )}
+      <span className={cn(isStale && 'text-warning')}>
+        {isLive ? 'Live' : 'Offline (mock data)'}
+        {lastRefreshed && ` · updated ${timeAgo(lastRefreshed.toISOString())}`}
+        {isStale && ' · data may be stale'}
+      </span>
+      <button
+        onClick={onRefresh}
+        disabled={isLoading}
+        aria-label="Refresh alerts"
+        className="ml-auto rounded p-0.5 hover:text-foreground transition-colors disabled:opacity-40"
+      >
+        <RefreshCw className={cn('size-3', isLoading && 'animate-spin')} aria-hidden="true" />
+      </button>
+    </div>
+  )
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
 export function AlertCentre() {
-  const [severity, setSeverity] = useState<(typeof SEVERITIES)[number]>('all')
+  const [severity, setSeverity]     = useState<(typeof SEVERITIES)[number]>('all')
   const [acknowledged, setAcknowledged] = useState<Record<string, boolean>>({})
 
+  // Live data state
+  const [alerts, setAlerts]         = useState<AlertItem[]>(ALERTS)   // pre-seed with mock
+  const [isLoading, setIsLoading]   = useState(false)
+  const [isLive, setIsLive]         = useState(false)
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // ── Fetch from backend ──────────────────────────────────────────────────
+  const fetchAlerts = useCallback(async (silent = false) => {
+    if (!silent) setIsLoading(true)
+    try {
+      const data = await getActiveAlerts(50)
+      // getActiveAlerts returns the array directly (falls back to mock on error)
+      // Detect if we got live data: differs from the static ALERTS length or content
+      const isLiveResponse = data !== ALERTS && JSON.stringify(data) !== JSON.stringify(ALERTS)
+      setAlerts(data)
+      setIsLive(isLiveResponse)
+      setLastRefreshed(new Date())
+    } catch {
+      // Network error — stay on current data, mark as offline
+      setIsLive(false)
+    } finally {
+      if (!silent) setIsLoading(false)
+    }
+  }, [])
+
+  // Initial load
+  useEffect(() => {
+    fetchAlerts()
+  }, [fetchAlerts])
+
+  // Auto-refresh
+  useEffect(() => {
+    timerRef.current = setInterval(() => fetchAlerts(true), REFRESH_INTERVAL_MS)
+    return () => { if (timerRef.current) clearInterval(timerRef.current) }
+  }, [fetchAlerts])
+
+  // Stale check
+  const isStale = lastRefreshed
+    ? Date.now() - lastRefreshed.getTime() > STALE_THRESHOLD_MS
+    : false
+
+  // ── Filtered list ────────────────────────────────────────────────────────
   const filtered = useMemo(
-    () => ALERTS.filter((a) => severity === 'all' || a.severity === severity),
-    [severity],
+    () => alerts.filter((a) => severity === 'all' || a.severity === severity),
+    [alerts, severity],
   )
+
+  // Severity counts (for summary badges)
+  const severeCnt  = useMemo(() => alerts.filter((a) => a.severity === 'severe').length, [alerts])
+  const highCnt    = useMemo(() => alerts.filter((a) => a.severity === 'high').length, [alerts])
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+
+      {/* ── Left: Alert list ─────────────────────────────────────────────── */}
       <div className="xl:col-span-2 flex flex-col gap-4">
         <GlassCard className="p-5">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-            <h2 className="text-sm font-medium">Active Alerts</h2>
+
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-sm font-medium">Active Alerts</h2>
+              {severeCnt > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-destructive/15 text-destructive text-[10px] font-semibold px-2 py-0.5 border border-destructive/30">
+                  {severeCnt} severe
+                </span>
+              )}
+              {highCnt > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 text-warning text-[10px] font-semibold px-2 py-0.5 border border-warning/30">
+                  {highCnt} high
+                </span>
+              )}
+            </div>
+
+            {/* Severity filter tabs */}
             <div className="flex items-center gap-1 flex-wrap" role="tablist" aria-label="Filter by severity">
               {SEVERITIES.map((s) => (
                 <button
@@ -60,7 +180,31 @@ export function AlertCentre() {
               ))}
             </div>
           </div>
-          <ul className="flex flex-col gap-3">
+
+          {/* Status bar */}
+          <div className="mb-4">
+            <StatusBar
+              lastRefreshed={lastRefreshed}
+              isLoading={isLoading}
+              isLive={isLive}
+              isStale={isStale}
+              onRefresh={() => fetchAlerts()}
+            />
+          </div>
+
+          {/* Alert items */}
+          <ul className="flex flex-col gap-3" aria-label="Alert list" aria-live="polite" aria-busy={isLoading}>
+
+            {/* Loading skeleton */}
+            {isLoading && alerts.length === 0 && (
+              Array.from({ length: 3 }).map((_, i) => (
+                <li key={i} className="rounded-xl border border-border bg-secondary/30 p-4 animate-pulse">
+                  <div className="h-3 w-2/5 bg-secondary rounded mb-2" />
+                  <div className="h-2 w-3/5 bg-secondary/60 rounded" />
+                </li>
+              ))
+            )}
+
             {filtered.map((a) => (
               <li
                 key={a.id}
@@ -85,6 +229,7 @@ export function AlertCentre() {
                   </div>
                   <button
                     onClick={() => setAcknowledged((prev) => ({ ...prev, [a.id]: !prev[a.id] }))}
+                    aria-pressed={!!acknowledged[a.id]}
                     className={cn(
                       'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition-colors shrink-0',
                       acknowledged[a.id]
@@ -99,14 +244,37 @@ export function AlertCentre() {
                 <p className="text-xs text-muted-foreground mt-2 text-pretty">{a.message}</p>
               </li>
             ))}
-            {filtered.length === 0 && (
-              <li className="text-center text-xs text-muted-foreground py-8">No alerts at this severity level.</li>
+
+            {!isLoading && filtered.length === 0 && (
+              <li className="text-center text-xs text-muted-foreground py-8">
+                No alerts at this severity level.
+              </li>
             )}
           </ul>
         </GlassCard>
       </div>
 
+      {/* ── Right: Channels + Escalation ────────────────────────────────── */}
       <div className="flex flex-col gap-4">
+
+        {/* Live summary card */}
+        <GlassCard className="p-5">
+          <h2 className="text-sm font-medium mb-3">Alert Summary</h2>
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { label: 'Total Active', value: alerts.length, accent: '' },
+              { label: 'Severe',  value: alerts.filter(a => a.severity === 'severe').length,   accent: 'text-destructive' },
+              { label: 'High',    value: alerts.filter(a => a.severity === 'high').length,     accent: 'text-warning' },
+              { label: 'Moderate',value: alerts.filter(a => a.severity === 'moderate').length, accent: 'text-yellow-400' },
+            ].map(({ label, value, accent }) => (
+              <div key={label} className="rounded-lg bg-secondary/50 px-3 py-2 text-center">
+                <div className={cn('text-lg font-bold tabular-nums', accent)}>{value}</div>
+                <div className="text-[10px] text-muted-foreground">{label}</div>
+              </div>
+            ))}
+          </div>
+        </GlassCard>
+
         <GlassCard className="p-5">
           <h2 className="text-sm font-medium mb-3">Dispatch Channels</h2>
           <ul className="flex flex-col gap-3">

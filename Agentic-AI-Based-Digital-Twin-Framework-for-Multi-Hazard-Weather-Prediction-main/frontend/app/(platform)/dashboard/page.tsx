@@ -25,7 +25,7 @@ import { getRiverGauges } from '@/lib/api/hydrology'
 import { getCloudburstPredictions } from '@/lib/api/predictions'
 
 export const metadata: Metadata = {
-  title: 'Dashboard | Digital Twin',
+  title: 'Dashboard | VARUNA',
   description: 'Live situational overview: weather, hazards, hydrology and AI status.',
 }
 

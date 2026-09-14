@@ -75,7 +75,10 @@ class AppSettings(BaseSettings):
 class SecuritySettings(BaseSettings):
     """Security and CORS settings."""
 
-    secret_key: SecretStr = Field(..., description="Master secret — used for signing internal tokens")
+    secret_key: SecretStr = Field(
+        default=SecretStr("weather_twin_dev_secret_key_change_in_production_32bytes"),
+        description="Master secret — used for signing internal tokens",
+    )
     allowed_hosts: list[str] = Field(
         default=["localhost", "127.0.0.1", "0.0.0.0", "testserver"],
         description="Hosts allowed by TrustedHostMiddleware; include testserver for FastAPI TestClient",
@@ -147,7 +150,11 @@ class RedisSettings(BaseSettings):
 class JWTSettings(BaseSettings):
     """JWT token configuration."""
 
-    secret_key: SecretStr = Field(..., min_length=32, description="HMAC signing key")
+    secret_key: SecretStr = Field(
+        default=SecretStr("weather_twin_jwt_secret_key_change_in_production_32bytes"),
+        min_length=32,
+        description="HMAC signing key",
+    )
     algorithm: str = Field("HS256", description="JWT signing algorithm")
     access_token_expire_minutes: int = Field(30, ge=1, description="Access token TTL in minutes")
     refresh_token_expire_days: int = Field(7, ge=1, le=90, description="Refresh token TTL in days")
@@ -179,14 +186,16 @@ class MinIOSettings(BaseSettings):
     """MinIO / S3-compatible object storage settings."""
 
     endpoint: str = Field("localhost:9000")
-    access_key: SecretStr = Field(..., description="MinIO access key")
-    secret_key: SecretStr = Field(..., description="MinIO secret key")
+    access_key: SecretStr = Field(default=SecretStr("minioadmin"), description="MinIO access key")
+    secret_key: SecretStr = Field(default=SecretStr("minioadmin"), description="MinIO secret key")
     use_ssl: bool = Field(False)
     region: str = Field("us-east-1")
     bucket_models: str = Field("ml-models")
     bucket_reports: str = Field("reports")
     bucket_datasets: str = Field("datasets")
     bucket_satellite: str = Field("satellite-data")
+
+    model_config = SettingsConfigDict(env_prefix="MINIO_")
 
     model_config = SettingsConfigDict(env_prefix="MINIO_")
 

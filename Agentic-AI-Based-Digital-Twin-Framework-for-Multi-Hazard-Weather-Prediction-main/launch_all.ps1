@@ -6,20 +6,20 @@ param([switch]$Stop)
 $Root = $PSScriptRoot
 
 $agents = @(
-    @{ Name="Weather Analysis"; Dir="weather_analysis_agent"; Module="agents.weather_analysis.main:app"; Port=8001; Env=@{} },
-    @{ Name="Prediction";       Dir="prediction_agent";       Module="agents.prediction.main:app";       Port=8002; Env=@{} },
-    @{ Name="Alert & Risk";     Dir="alert_risk_agent";       Module="agents.alert_risk.main:app";       Port=8003; Env=@{
+    @{ Name="Weather Analysis"; Dir="."; Module="agents.weather_analysis.main:app"; Port=8001; Env=@{} },
+    @{ Name="Prediction";       Dir="."; Module="agents.prediction.main:app";       Port=8002; Env=@{} },
+    @{ Name="Alert & Risk";     Dir="."; Module="agents.alert_risk.main:app";       Port=8003; Env=@{
         PREDICTION_AGENT_URL="http://localhost:8002"
         WEATHER_AGENT_URL="http://localhost:8001"
     }},
-    @{ Name="Digital Twin";     Dir="digital_twin_agent";     Module="agents.digital_twin.main:app";     Port=8004; Env=@{} },
-    @{ Name="Report";           Dir="report_agent";           Module="agents.report.main:app";           Port=8006; Env=@{
+    @{ Name="Digital Twin";     Dir="."; Module="agents.digital_twin.main:app";     Port=8004; Env=@{} },
+    @{ Name="Report";           Dir="."; Module="agents.report.main:app";           Port=8006; Env=@{
         WEATHER_AGENT_URL="http://localhost:8001"
         PREDICTION_AGENT_URL="http://localhost:8002"
         ALERT_AGENT_URL="http://localhost:8003"
         DIGITAL_TWIN_AGENT_URL="http://localhost:8004"
     }},
-    @{ Name="Orchestrator";     Dir="orchestrator_agent";     Module="agents.orchestrator.main:app";     Port=8005; Env=@{
+    @{ Name="Orchestrator";     Dir="."; Module="agents.orchestrator.main:app";     Port=8005; Env=@{
         WEATHER_AGENT_URL="http://localhost:8001"
         PREDICTION_AGENT_URL="http://localhost:8002"
         ALERT_AGENT_URL="http://localhost:8003"

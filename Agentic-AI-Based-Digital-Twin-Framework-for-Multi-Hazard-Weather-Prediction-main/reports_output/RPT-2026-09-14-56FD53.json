@@ -1,0 +1,40 @@
+{
+  "metadata": {
+    "report_id": "RPT-2026-09-14-56FD53",
+    "report_type": "multi_hazard",
+    "format": "json",
+    "version": 10,
+    "generated_at": "2026-09-14T14:38:05.017776+00:00",
+    "districts": [
+      "Mandi"
+    ],
+    "data_sources_used": [],
+    "data_completeness": 0.0
+  },
+  "sections": [
+    {
+      "title": "Summary",
+      "kind": "text",
+      "content": "**Executive Summary \u2013 Mandi District (Multi\u2011Hazard Assessment)**  \nThe latest multi\u2011hazard analysis for Mandi indicates that current weather and environmental data do not reveal any significant anomalies, extreme events, or heightened risk factors. All monitored parameters\u2014including precipitation, temperature, landslide potential, and flood indicators\u2014remain within normal seasonal ranges. Consequently, the district is assessed to be under low hazard exposure at this time. Ongoing observation is recommended to promptly identify any future deviations."
+    },
+    {
+      "title": "Key Insights",
+      "kind": "text",
+      "content": "- No significant anomalies, extreme events, or elevated risk detected in available data."
+    },
+    {
+      "title": "District Metrics",
+      "kind": "table",
+      "content": [
+        {
+          "District": "Mandi",
+          "Temp (C)": null,
+          "Humidity (%)": null,
+          "Predicted Rainfall (mm)": null,
+          "Digital Twin Risk": null,
+          "Landslide Score": null
+        }
+      ]
+    }
+  ]
+}

@@ -218,6 +218,9 @@ class AgentName(StrEnum):
     RESEARCH = "research"
     EXPLAINABILITY = "explainability"
     DECISION_SUPPORT = "decision_support"
+    MODEL_HEALTH = "model_health"
+    ENSEMBLE_FUSION = "ensemble_fusion"
+    TRIP_ADVISORY = "trip_advisory"
 
 
 class AgentStatus(StrEnum):

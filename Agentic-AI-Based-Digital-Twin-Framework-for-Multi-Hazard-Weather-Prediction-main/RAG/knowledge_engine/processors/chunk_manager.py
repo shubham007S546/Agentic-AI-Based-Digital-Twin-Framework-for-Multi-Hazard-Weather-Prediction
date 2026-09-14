@@ -12,10 +12,14 @@ class ChunkManager:
             return
 
         try:
-            from RAG_project.preprocessing.chunk_cleaner import ChunkCleaner
-            from RAG_project.chunking.text_splitter import TextSplitter
-        except ImportError as exc:
-            raise RuntimeError("Unable to import the existing RAG chunking pipeline.") from exc
+            from RAG.preprocessing.chunk_cleaner import ChunkCleaner
+            from RAG.chunking.text_splitter import TextSplitter
+        except ImportError:
+            try:
+                from RAG_project.preprocessing.chunk_cleaner import ChunkCleaner
+                from RAG_project.chunking.text_splitter import TextSplitter
+            except ImportError as exc:
+                raise RuntimeError("Unable to import the existing RAG chunking pipeline.") from exc
 
         self.cleaner = ChunkCleaner()
         self.splitter = TextSplitter()

@@ -177,18 +177,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as exc:
         logger.warning("Model registry initialization failed (non-fatal)", error=str(exc))
 
-    # ── 7. Initialize Agent Registry — all 12 agents ─────────────────────────
+    # ── 7. Initialize Agent Registry — all 14 agents ─────────────────────────
     try:
         from app.agents.agent_registry import get_agent_registry
 
-        # Existing agents (fixed enum names)
+        # Core agents
         from app.agents.weather_agent import WeatherAgent
         from app.agents.prediction_agent import PredictionAgent
         from app.agents.alert_agent import AlertAgent
         from app.agents.report_agent import ReportAgent
         from app.agents.notification_agent import NotificationAgent
 
-        # New agents
+        # Intelligence & Operations agents
         from app.agents.disaster_intelligence_agent import DisasterIntelligenceAgent
         from app.agents.digital_twin_agent import DigitalTwinAgent
         from app.agents.monitoring_agent import MonitoringAgent
@@ -196,10 +196,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         from app.agents.research_agent import ResearchAgent
         from app.agents.explainability_agent import ExplainabilityAgent
         from app.agents.decision_support_agent import DecisionSupportAgent
+        from app.agents.model_health_agent import ModelHealthAgent
+        from app.agents.ensemble_fusion_agent import EnsembleFusionAgent
+        from app.agents.trip_agent import TripAgent
 
         agent_mgr = get_agent_registry()
 
-        # Register all 12 agents (order matches AgentName enum)
+        # Register all 15 agents
         agent_mgr.register(WeatherAgent())            # WEATHER_INTELLIGENCE
         agent_mgr.register(PredictionAgent())         # PREDICTION
         agent_mgr.register(AlertAgent())              # ALERT
@@ -212,6 +215,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         agent_mgr.register(ResearchAgent())           # RESEARCH
         agent_mgr.register(ExplainabilityAgent())     # EXPLAINABILITY
         agent_mgr.register(DecisionSupportAgent())    # DECISION_SUPPORT
+        agent_mgr.register(ModelHealthAgent())        # MODEL_HEALTH
+        agent_mgr.register(EnsembleFusionAgent())     # ENSEMBLE_FUSION
+        agent_mgr.register(TripAgent())               # TRIP_ADVISORY
 
         logger.info("Agent registry ready", total_agents=len(agent_mgr.list_agents()))
     except Exception as exc:

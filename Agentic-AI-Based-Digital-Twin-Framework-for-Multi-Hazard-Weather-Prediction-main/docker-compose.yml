@@ -5,8 +5,8 @@ services:
     image: postgres:16-alpine
     container_name: weather_db
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
       POSTGRES_DB: ${POSTGRES_DB:-weather_twin}
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -35,8 +35,8 @@ services:
     image: minio/minio:latest
     container_name: weather_minio
     environment:
-      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY is required}
-      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY is required}
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
     command: server /data --console-address ":9001"
     volumes:
       - miniodata:/data
@@ -67,11 +67,11 @@ services:
       - APP_ENV=production
       - DATABASE_URL=postgresql+asyncpg://postgres:password@postgres:5432/weather_twin
       - REDIS_URL=redis://redis:6379/0
-      - APP_SECRET_KEY=${APP_SECRET_KEY:?APP_SECRET_KEY is required}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
+      - APP_SECRET_KEY=${APP_SECRET_KEY:-weather_twin_dev_secret_key_change_in_production_32bytes}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-weather_twin_jwt_secret_key_change_in_production_32bytes}
       - S3_ENDPOINT_URL=http://minio:9000
-      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY is required}
-      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:?MINIO_SECRET_KEY is required}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
       - ORCHESTRATOR_AGENT_URL=http://orchestrator_agent:8005
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2

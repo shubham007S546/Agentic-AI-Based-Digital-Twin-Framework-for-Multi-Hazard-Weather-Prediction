@@ -1,0 +1,60 @@
+{
+  "metadata": {
+    "report_id": "RPT-2026-09-12-69225B",
+    "report_type": "alert_bulletin",
+    "format": "json",
+    "version": 1,
+    "generated_at": "2026-09-12T03:04:47.873884+00:00",
+    "districts": [
+      "mandi",
+      "kullu",
+      "chamba"
+    ],
+    "data_sources_used": [
+      "data_override"
+    ],
+    "data_completeness": 1.0
+  },
+  "sections": [
+    {
+      "title": "Summary",
+      "kind": "text",
+      "content": "No significant anomalies, extreme events, or elevated risk detected in available data."
+    },
+    {
+      "title": "Key Insights",
+      "kind": "text",
+      "content": "- No significant anomalies, extreme events, or elevated risk detected in available data."
+    },
+    {
+      "title": "District Metrics",
+      "kind": "table",
+      "content": [
+        {
+          "District": "mandi",
+          "Temp (C)": null,
+          "Humidity (%)": null,
+          "Predicted Rainfall (mm)": null,
+          "Digital Twin Risk": null,
+          "Landslide Score": null
+        },
+        {
+          "District": "kullu",
+          "Temp (C)": null,
+          "Humidity (%)": null,
+          "Predicted Rainfall (mm)": null,
+          "Digital Twin Risk": null,
+          "Landslide Score": null
+        },
+        {
+          "District": "chamba",
+          "Temp (C)": null,
+          "Humidity (%)": null,
+          "Predicted Rainfall (mm)": null,
+          "Digital Twin Risk": null,
+          "Landslide Score": null
+        }
+      ]
+    }
+  ]
+}

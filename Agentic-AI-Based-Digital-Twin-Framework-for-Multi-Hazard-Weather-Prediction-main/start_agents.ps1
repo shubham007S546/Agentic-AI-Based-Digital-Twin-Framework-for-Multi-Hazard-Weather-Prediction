@@ -41,7 +41,7 @@ function Start-Agent {
 Start-Agent -Name "Weather Analysis Agent" `
     -Module "agents.weather_analysis.main" `
     -Port 8001 `
-    -WorkDir "$Root\weather_analysis_agent"
+    -WorkDir "$Root"
 
 Start-Sleep -Seconds 2
 
@@ -49,7 +49,7 @@ Start-Sleep -Seconds 2
 Start-Agent -Name "Prediction Agent" `
     -Module "agents.prediction.main" `
     -Port 8002 `
-    -WorkDir "$Root\prediction_agent"
+    -WorkDir "$Root"
 
 Start-Sleep -Seconds 2
 
@@ -57,7 +57,7 @@ Start-Sleep -Seconds 2
 Start-Agent -Name "Alert & Risk Agent" `
     -Module "agents.alert_risk.main" `
     -Port 8003 `
-    -WorkDir "$Root\alert_risk_agent" `
+    -WorkDir "$Root" `
     -Env @{
         PREDICTION_AGENT_URL = "http://localhost:8002"
         WEATHER_AGENT_URL    = "http://localhost:8001"
@@ -69,7 +69,7 @@ Start-Sleep -Seconds 2
 Start-Agent -Name "Digital Twin Agent" `
     -Module "agents.digital_twin.main" `
     -Port 8004 `
-    -WorkDir "$Root\digital_twin_agent"
+    -WorkDir "$Root"
 
 Start-Sleep -Seconds 2
 
@@ -77,7 +77,7 @@ Start-Sleep -Seconds 2
 Start-Agent -Name "Report Agent" `
     -Module "agents.report.main" `
     -Port 8006 `
-    -WorkDir "$Root\report_agent" `
+    -WorkDir "$Root" `
     -Env @{
         WEATHER_AGENT_URL     = "http://localhost:8001"
         PREDICTION_AGENT_URL  = "http://localhost:8002"
@@ -91,7 +91,7 @@ Start-Sleep -Seconds 2
 Start-Agent -Name "Orchestrator Agent" `
     -Module "agents.orchestrator.main" `
     -Port 8005 `
-    -WorkDir "$Root\orchestrator_agent" `
+    -WorkDir "$Root" `
     -Env @{
         WEATHER_AGENT_URL     = "http://localhost:8001"
         PREDICTION_AGENT_URL  = "http://localhost:8002"

@@ -36,11 +36,6 @@ class User(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
 
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
 
-    # Populated from the approved AccessRequest — not user-editable at
-    # signup time since there is no self-serve signup.
-    organization: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    department: Mapped[str | None] = mapped_column(String(255), nullable=True)
-
     # Native Postgres Enum type
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole, name="user_role_enum", native_enum=True),

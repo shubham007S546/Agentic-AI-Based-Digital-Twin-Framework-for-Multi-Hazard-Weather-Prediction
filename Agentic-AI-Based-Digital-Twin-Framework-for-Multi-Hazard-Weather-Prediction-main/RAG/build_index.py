@@ -25,11 +25,22 @@ run" inefficiency.
 import sys
 from pathlib import Path
 
-sys.path.append(str(Path(__file__).resolve().parent))
+_rag_root = str(Path(__file__).resolve().parent)
+if _rag_root in sys.path:
+    sys.path.remove(_rag_root)
+sys.path.insert(0, _rag_root)
+
+# Safeguard against torchvision::nms mismatch
+if "torchvision" not in sys.modules:
+    try:
+        import torchvision
+    except Exception:
+        sys.modules["torchvision"] = None
 
 from config import PDF_DIR, WEB_URLS, WEB_URLS_FILE
 from loaders.pdf_loader import PDFLoader
 from loaders.web_loader import WebLoader
+from loaders.project_loader import ProjectLoader
 from chunking.text_splitter import TextSplitter
 from preprocessing.chunk_cleaner import ChunkCleaner
 from vectorstore.faiss_db import FAISSVectorStore
@@ -45,16 +56,19 @@ def build_index():
     pdf_documents = pdf_loader.load_all_pdfs()
     print(f"Pages Loaded (PDF) : {len(pdf_documents)}")
 
-    # Load websites (optional — no-op if WEB_URLS is empty and there's
-    # no data/urls.txt). Produces the SAME Document schema as PDFLoader,
-    # so everything downstream — cleaning, chunking, embedding,
-    # retrieval, citations — treats PDF and web pages identically.
+    # Load websites (optional)
     web_loader = WebLoader(urls=WEB_URLS, url_file=WEB_URLS_FILE)
     web_documents = web_loader.load_all_urls()
     print(f"Pages Loaded (Web) : {len(web_documents)}")
 
-    documents = pdf_documents + web_documents
-    print(f"Total Pages Loaded : {len(documents)}")
+    # Load project documentation (README, architecture, guides, schemas)
+    repo_root = Path(__file__).resolve().parent.parent
+    project_loader = ProjectLoader(repo_root)
+    project_documents = project_loader.load_project_docs()
+    print(f"Docs Loaded (Project) : {len(project_documents)}")
+
+    documents = pdf_documents + web_documents + project_documents
+    print(f"Total Pages/Docs Loaded : {len(documents)}")
 
     # Clean pages: strip boilerplate, URLs, page numbers, front matter,
     # repeated headers/footers BEFORE splitting

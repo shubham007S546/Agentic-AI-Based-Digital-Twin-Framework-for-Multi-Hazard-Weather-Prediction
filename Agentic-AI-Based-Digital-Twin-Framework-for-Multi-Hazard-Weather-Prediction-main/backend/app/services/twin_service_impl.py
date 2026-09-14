@@ -34,6 +34,7 @@ from app.repositories.interfaces.twin_repo import ITwinRepository
 from app.services.interfaces.twin_service import ITwinService
 from app.services.interfaces.weather_service import IWeatherService
 from app.schemas.digital_twin import SimulationCreateRequest
+from app.digital_twin.engine import digital_twin_engine
 
 logger = structlog.get_logger(__name__)
 
@@ -109,11 +110,28 @@ class TwinServiceImpl(ITwinService):
                     district=district.name,
                 )
         except Exception as exc:
-            logger.warning(
-                "Digital Twin Agent not reachable — using default stubs",
+            logger.info(
+                "Digital Twin Agent sidecar not reachable — enriching from in-process GIS twin layers",
                 district=district.name,
                 error=str(exc),
             )
+            try:
+                layers_data = await digital_twin_engine.get_layers(district.name)
+                bridges = layers_data.get("bridges") or []
+                roads = layers_data.get("roads") or []
+                boundary_area = layers_data.get("boundary_area_km2")
+                infrastructure_state.update({
+                    "bridges_count": len(bridges),
+                    "roads_count": len(roads),
+                    "boundary_area_km2": boundary_area,
+                    "gis_layers_loaded": [l.get("layer") for l in layers_data.get("layers", [])],
+                })
+            except Exception as layer_exc:
+                logger.warning(
+                    "In-process twin layers also unavailable — using default stubs",
+                    district=district.name,
+                    error=str(layer_exc),
+                )
 
         state = TwinState(
             district=district,
@@ -159,59 +177,96 @@ class TwinServiceImpl(ITwinService):
 
         results: dict[str, Any] = {}
 
-        # ── Strategy 1: Call the standalone Digital Twin Agent ────────────────
-        # The agent implements a full LangGraph workflow with Rational-Method
-        # hydrology and Caine-1980 landslide thresholds — richer than our ML
-        # predictor stubs.
+        # ── Strategy 1: In-process Digital Twin Engine (LangGraph + Rational-Method) ──
+        params = simulation.scenario_parameters or {}
+        precip_mult = float(params.get("precipitation_multiplier", 1.0))
+        rainfall_mm = float(params.get("rainfall_mm", 65.0 * precip_mult))
+        duration_hours = float(params.get("duration_hours", 24.0))
+
         try:
             logger.info(
-                "Calling Digital Twin Agent",
+                "Executing in-process Digital Twin Engine simulation",
                 simulation_id=str(simulation.id),
-                url=_DIGITAL_TWIN_AGENT_URL,
+                district=simulation.district.name,
+                rainfall_mm=rainfall_mm,
             )
-            params = simulation.scenario_parameters or {}
-            precip_mult = float(params.get("precipitation_multiplier", 1.0))
+            scenario_req = {
+                "district": simulation.district.name,
+                "rainfall_mm": rainfall_mm,
+                "duration_hours": duration_hours,
+                "hazard_types": params.get("hazard_types", ["flood", "landslide"]),
+                "catchment_area_km2": params.get("catchment_area_km2"),
+                "runoff_coefficient": params.get("runoff_coefficient"),
+            }
+            dt_result = await digital_twin_engine.run_scenario(scenario_req)
+            flood_data = dt_result.get("flood") or {}
+            landslide_data = dt_result.get("landslide") or {}
+            impact_data = dt_result.get("impact") or {}
 
-            async with httpx.AsyncClient(timeout=_AGENT_TIMEOUT) as client:
-                resp = await client.post(
-                    f"{_DIGITAL_TWIN_AGENT_URL}/api/v1/digital-twin/scenario",
-                    json={
-                        "query": (
-                            f"Simulate what happens to {simulation.district.name} district "
-                            f"if precipitation increases by {precip_mult}x. "
-                            "Include flood severity, peak discharge, landslide risk, "
-                            "infrastructure impact, and recommended actions."
-                        ),
-                        "district": simulation.district.name,
-                        **params,
-                    },
-                )
-                resp.raise_for_status()
-                agent_data = resp.json()
-                results = {
-                    "source": "digital_twin_agent",
-                    "agent_response": agent_data.get("response", ""),
-                    "flood_severity": agent_data.get("flood_severity", "unknown"),
-                    "peak_discharge_m3s": agent_data.get("peak_discharge_m3s"),
-                    "flood_depth_m": agent_data.get("flood_depth_m"),
-                    "landslide_probability": agent_data.get("landslide_probability"),
-                    "infrastructure_impact": agent_data.get("infrastructure_impact", []),
-                    "population_at_risk": agent_data.get("population_at_risk", 0),
-                    "recommended_actions": agent_data.get("recommended_actions", []),
-                    **{k: v for k, v in agent_data.items() if k not in results},
-                }
-                logger.info(
-                    "Digital Twin Agent simulation succeeded",
-                    simulation_id=str(simulation.id),
-                )
+            results = {
+                "source": "in_process_digital_twin_engine",
+                "scenario_id": dt_result.get("scenario_id"),
+                "risk_level": dt_result.get("risk_level", "Moderate"),
+                "peak_discharge_m3s": flood_data.get("peak_discharge_m3s"),
+                "flood_depth_m": flood_data.get("max_water_depth_m"),
+                "flood_channel_exceeded": flood_data.get("channel_capacity_exceeded"),
+                "flood_affected_area_sq_km": flood_data.get("affected_area_sq_km"),
+                "landslide_susceptibility_score": landslide_data.get("susceptibility_score"),
+                "landslide_threshold_exceeded": landslide_data.get("threshold_exceeded"),
+                "infrastructure_impact": impact_data,
+                "layers_used": dt_result.get("layers_used", []),
+                "visualization": dt_result.get("visualization", {}),
+                "notes": dt_result.get("notes", []),
+            }
+            logger.info("In-process Digital Twin simulation succeeded", simulation_id=str(simulation.id))
 
-        # ── Strategy 2: Local ML predictor fallback ───────────────────────────
-        except Exception as agent_exc:
+        # ── Strategy 2: Call standalone HTTP Digital Twin Agent sidecar (if running) ─
+        except Exception as engine_exc:
             logger.warning(
-                "Digital Twin Agent unavailable — falling back to local ML predictors",
+                "In-process Digital Twin Engine failed — attempting HTTP agent sidecar",
                 simulation_id=str(simulation.id),
-                error=str(agent_exc),
+                error=str(engine_exc),
             )
+            try:
+                async with httpx.AsyncClient(timeout=_AGENT_TIMEOUT) as client:
+                    resp = await client.post(
+                        f"{_DIGITAL_TWIN_AGENT_URL}/api/v1/digital-twin/scenario",
+                        json={
+                            "query": (
+                                f"Simulate what happens to {simulation.district.name} district "
+                                f"if precipitation increases by {precip_mult}x. "
+                                "Include flood severity, peak discharge, landslide risk, "
+                                "infrastructure impact, and recommended actions."
+                            ),
+                            "district": simulation.district.name,
+                            **params,
+                        },
+                    )
+                    resp.raise_for_status()
+                    agent_data = resp.json()
+                    results = {
+                        "source": "digital_twin_agent_http",
+                        "agent_response": agent_data.get("response", ""),
+                        "flood_severity": agent_data.get("flood_severity", "unknown"),
+                        "peak_discharge_m3s": agent_data.get("peak_discharge_m3s"),
+                        "flood_depth_m": agent_data.get("flood_depth_m"),
+                        "landslide_probability": agent_data.get("landslide_probability"),
+                        "infrastructure_impact": agent_data.get("infrastructure_impact", []),
+                        "population_at_risk": agent_data.get("population_at_risk", 0),
+                        "recommended_actions": agent_data.get("recommended_actions", []),
+                        **{k: v for k, v in agent_data.items() if k not in results},
+                    }
+                    logger.info(
+                        "HTTP Digital Twin Agent simulation succeeded",
+                        simulation_id=str(simulation.id),
+                    )
+            # ── Strategy 3: Local ML predictor fallback ───────────────────────────
+            except Exception as agent_exc:
+                logger.warning(
+                    "Digital Twin Agent sidecar also unavailable — falling back to local ML predictors",
+                    simulation_id=str(simulation.id),
+                    error=str(agent_exc),
+                )
             try:
                 params = simulation.scenario_parameters or {}
                 precip_mult = float(params.get("precipitation_multiplier", 1.0))

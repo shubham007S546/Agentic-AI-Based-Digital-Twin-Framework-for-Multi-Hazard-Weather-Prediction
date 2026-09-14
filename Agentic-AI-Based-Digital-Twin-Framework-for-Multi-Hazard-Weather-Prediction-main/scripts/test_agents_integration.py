@@ -20,20 +20,20 @@ print("=" * 70)
 # 1. Weather Analysis Agent
 print("\n[1/6] Testing Weather Analysis Agent...")
 try:
-    from weather_analysis_agent.agents.weather_analysis.graph import weather_analysis_graph
-    from weather_analysis_agent.agents.weather_analysis.schemas import WeatherRequest
+    from agents.weather_analysis.graph import weather_analysis_graph
+    from agents.weather_analysis.schemas import WeatherRequest
     req = WeatherRequest(location="Mandi", forecast_hours=24)
     state = {"request": req.model_dump()}
     result = weather_analysis_graph.invoke(state)
     resp = result.get("response", {})
-    print(f"  --> Weather Agent OK: location={resp.get('location')}, summary={resp.get('summary')[:60]}...")
+    print(f"  --> Weather Agent OK: location={resp.get('location')}, summary={resp.get('summary', '')[:60]}...")
 except Exception as e:
     print(f"  --> Weather Agent FAILED: {e}")
 
 # 2. Prediction Agent
 print("\n[2/6] Testing Prediction Agent...")
 try:
-    from prediction_agent.agents.prediction.graph import prediction_graph
+    from agents.prediction.graph import prediction_graph
     from datetime import datetime, timezone
     now_iso = datetime.now(timezone.utc).isoformat()
     req_pred = {
@@ -69,7 +69,7 @@ except Exception as e:
 # 3. Digital Twin Agent
 print("\n[3/6] Testing Digital Twin Agent...")
 try:
-    from digital_twin_agent.agents.digital_twin.graph import digital_twin_graph
+    from agents.digital_twin.graph import digital_twin_graph
     req_twin = {
         "district": "Mandi",
         "rainfall_mm": 75.0,
@@ -86,7 +86,7 @@ except Exception as e:
 # 4. Alert & Risk Agent
 print("\n[4/6] Testing Alert & Risk Agent...")
 try:
-    from alert_risk_agent.agents.alert_risk.graph import alert_graph
+    from agents.alert_risk.graph import alert_graph
     req_alert = {
         "location": "Mandi, Himachal Pradesh",
         "hazard_types": ["rainfall", "cloudburst", "landslide", "flood"],
@@ -103,7 +103,7 @@ except Exception as e:
 # 5. Report Agent
 print("\n[5/6] Testing Report Agent...")
 try:
-    from report_agent.agents.report.graph import report_graph
+    from agents.report.graph import report_graph
     req_report = {
         "report_type": "multi_hazard",
         "districts": ["Mandi"],
@@ -121,7 +121,7 @@ except Exception as e:
 # 6. Orchestrator Agent
 print("\n[6/6] Testing Orchestrator Agent...")
 try:
-    from orchestrator_agent.agents.orchestrator.graph import orchestrator_graph
+    from agents.orchestrator.graph import orchestrator_graph
     initial_state = {
         "session_id": "test-session-101",
         "user_query": "What is the weather and flood risk in Mandi tomorrow?",

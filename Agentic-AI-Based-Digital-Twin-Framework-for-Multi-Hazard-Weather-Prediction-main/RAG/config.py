@@ -65,7 +65,7 @@ SIMILARITY_THRESHOLD = 0.35
 # LLM
 # ==========================================================
 
-LLM_MODEL = "openai/gpt-oss-120b"  # llama-3.3-70b-versatile was deprecated by Groq; this is its recommended replacement
+LLM_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
 TEMPERATURE = 0.2
 

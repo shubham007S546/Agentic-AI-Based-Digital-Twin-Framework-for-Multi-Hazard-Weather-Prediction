@@ -20,6 +20,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.agents.base_agent import BaseAgent
+from app.agents.agent_registry import get_agent_registry
 from app.core.enums import AgentName, AgentStatus, AgentTrigger
 
 
@@ -65,8 +66,13 @@ class MonitoringAgent(BaseAgent):
         now = datetime.now(UTC)
         stale_threshold = now - timedelta(minutes=_STALE_AGENT_MINUTES)
 
-        # Simulated health report (real: from agent_manager.health_report())
-        agent_health_report: list[dict] = payload.get("agent_health", [])
+        # Self-driven health polling — no longer relies on external payload
+        agent_mgr = get_agent_registry()
+        agent_health_report: list[dict] = (
+            agent_mgr.health_report()  # live poll of all registered agents
+            if agent_mgr.health_report()
+            else payload.get("agent_health", [])
+        )
         model_health_report: list[dict] = payload.get("model_health", [])
 
         agents_healthy: list[str] = []
@@ -121,11 +127,29 @@ class MonitoringAgent(BaseAgent):
                 degraded_agents=len(agents_degraded),
                 unhealthy_models=len(models_unhealthy),
             )
-            # Real: await agent_manager.execute(
-            #     AgentName.NOTIFICATION,
-            #     payload={"message": "System health alert", "channels": ["email"]},
-            #     trigger=AgentTrigger.CASCADE,
-            # )
+            # ── Cascade: system health alert to operators ──────────────────────
+            degraded_names = [a["agent"] for a in agents_degraded]
+            health_message = (
+                f"🔴 VARUNA System Health Alert — {len(agents_degraded)} agent(s) degraded: "
+                + ", ".join(degraded_names)
+                + (f" | {len(models_unhealthy)} model(s) not loaded: {', '.join(models_unhealthy)}" if models_unhealthy else "")
+                + f" | Checked at {now.isoformat()}"
+            )
+            try:
+                await agent_mgr.execute(
+                    agent_name=AgentName.NOTIFICATION,
+                    payload={
+                        "message": health_message,
+                        "subject": "VARUNA: System Health Degradation",
+                        "channels": ["email"],
+                        "recipients": [],   # real: ops team contacts from settings
+                        "template": "system_health_alert",
+                    },
+                    trigger=AgentTrigger.CASCADE,
+                    triggered_by="monitoring_agent",
+                )
+            except Exception as exc:
+                self._logger.error("Health cascade notification failed", error=str(exc))
 
         return {
             "checked_at": now.isoformat(),

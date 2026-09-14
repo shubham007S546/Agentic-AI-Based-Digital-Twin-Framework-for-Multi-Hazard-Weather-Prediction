@@ -3,7 +3,7 @@ import { PageHeader } from '@/components/shared/page-header'
 import { AssistantChat } from '@/components/assistant/assistant-chat'
 
 export const metadata: Metadata = {
-  title: 'AI Assistant | Shubham',
+  title: 'AI Assistant | VARUNA',
   description: 'Agentic AI assistant reasoning over live hazard, weather and model data.',
 }
 

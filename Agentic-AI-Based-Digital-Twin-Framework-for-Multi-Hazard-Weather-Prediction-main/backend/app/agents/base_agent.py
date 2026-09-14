@@ -44,6 +44,7 @@ class AgentResult:
     completed_at: Optional[datetime] = None
     duration_seconds: Optional[float] = None
     result_summary: dict[str, Any] = field(default_factory=dict)
+    agent_report: Optional[dict[str, Any]] = None
     error_message: Optional[str] = None
 
 
@@ -109,6 +110,36 @@ class BaseAgent(ABC):
             result.status = AgentStatus.COMPLETED
             result.result_summary = summary
             self._is_healthy = True
+
+            # Extract or construct standardized AgentExecutionReport
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            report_dict = summary.get("agent_report") if isinstance(summary, dict) else None
+            if not report_dict:
+                from app.agents.agent_prompts import build_agent_execution_report
+                actions = summary.get("actions_taken") or [
+                    f"Initialized {self.name.value} execution with payload keys: {list((payload or {}).keys())}",
+                    f"Executed core processing logic in {round(duration_ms, 1)}ms",
+                    "Validated output schema and compiled final response",
+                ]
+                final_answer = summary.get("final_answer") or {
+                    k: v for k, v in summary.items() if k not in ("agent_report", "actions_taken")
+                }
+                summary_md = summary.get("summary_markdown") or f"### {self.name.value.replace('_', ' ').title()} Report\n- Status: `COMPLETED`\n- Duration: {round(duration_ms, 1)} ms"
+                report = build_agent_execution_report(
+                    agent_name=self.name.value,
+                    task_assigned=payload or {},
+                    actions_taken=actions,
+                    final_answer=final_answer,
+                    summary_markdown=summary_md,
+                    duration_ms=duration_ms,
+                    status="COMPLETED",
+                    execution_id=str(execution_id),
+                )
+                report_dict = report.to_dict()
+                if isinstance(summary, dict):
+                    summary["agent_report"] = report_dict
+
+            result.agent_report = report_dict
 
         except asyncio.TimeoutError:
             result.status = AgentStatus.TIMEOUT

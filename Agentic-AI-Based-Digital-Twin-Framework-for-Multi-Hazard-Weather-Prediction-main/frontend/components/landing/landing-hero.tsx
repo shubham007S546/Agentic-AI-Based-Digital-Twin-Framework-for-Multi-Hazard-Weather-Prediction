@@ -19,8 +19,10 @@ export function LandingHero() {
       <div className="absolute inset-0">
         <Image
           src="/images/earth-hero.png"
-          alt=""
+          alt="Digital Twin Earth Hero"
           fill
+          sizes="100vw"
+          unoptimized
           priority
           className="object-cover opacity-60"
         />

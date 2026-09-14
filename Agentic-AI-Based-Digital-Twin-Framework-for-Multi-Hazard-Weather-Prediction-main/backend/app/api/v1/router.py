@@ -31,6 +31,7 @@ from app.api.v1.routers.report_router import router as report_router
 from app.api.v1.routers.models_router import router as models_router
 from app.api.v1.routers.notification_router import router as notification_router
 from app.api.v1.routers.agents_router import router as agents_router
+from app.digital_twin.router import router as dt_engine_router
 
 # ── Aggregate router ──────────────────────────────────────────────────────────
 # This is the single router included in main.py under the /api/v1 prefix.
@@ -54,6 +55,7 @@ api_v1_router.include_router(prediction_router, prefix="/predictions", tags=["Pr
 
 # ── Digital Twin (Phase 10) ───────────────────────────────────────────────────
 api_v1_router.include_router(twin_router, prefix="/twin", tags=["Digital Twin"])
+api_v1_router.include_router(dt_engine_router, prefix="/twin/engine", tags=["Digital Twin Engine"])
 
 # ── Model Registry (Phase 8) ─────────────────────────────────────────────────
 api_v1_router.include_router(models_router, prefix="/models", tags=["Model Registry"])
