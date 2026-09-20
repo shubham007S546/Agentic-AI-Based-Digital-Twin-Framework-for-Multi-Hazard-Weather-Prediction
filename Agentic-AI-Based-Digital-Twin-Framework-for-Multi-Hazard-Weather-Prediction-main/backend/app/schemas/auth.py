@@ -50,11 +50,11 @@ class MeResponse(BaseModel):
     email: EmailStr
     full_name: str
     role: UserRole
-    organization: str | None
-    department: str | None
+    organization: str | None = None
+    department: str | None = None
     is_active: bool
     is_verified: bool
-    last_login: datetime | None
+    last_login: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

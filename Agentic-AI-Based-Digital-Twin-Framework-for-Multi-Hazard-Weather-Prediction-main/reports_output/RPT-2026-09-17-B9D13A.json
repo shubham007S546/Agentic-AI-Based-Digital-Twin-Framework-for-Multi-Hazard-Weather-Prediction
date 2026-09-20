@@ -1,0 +1,56 @@
+{
+  "metadata": {
+    "report_id": "RPT-2026-09-17-B9D13A",
+    "report_type": "multi_hazard",
+    "format": "json",
+    "version": 15,
+    "generated_at": "2026-09-17T06:09:28.890444+00:00",
+    "districts": [
+      "Mandi"
+    ],
+    "data_sources_used": [
+      "alert_agent"
+    ],
+    "data_completeness": 0.5
+  },
+  "sections": [
+    {
+      "title": "Summary",
+      "kind": "text",
+      "content": "**Executive Summary \u2013 Mandi District, Himachal Pradesh**\n\nThe latest multi\u2011hazard monitoring indicates that there is currently one active alert across the districts under observation, which includes Mandi. This alert signifies a heightened risk condition that warrants attention from local authorities and the public. Stakeholders should stay tuned to official updates for any further guidance or changes to the alert status."
+    },
+    {
+      "title": "Key Insights",
+      "kind": "text",
+      "content": "- 1 active alert(s) across monitored districts."
+    },
+    {
+      "title": "District Metrics",
+      "kind": "table",
+      "content": [
+        {
+          "District": "Mandi",
+          "Temp (C)": null,
+          "Humidity (%)": null,
+          "Predicted Rainfall (mm)": null,
+          "Digital Twin Risk": null,
+          "Landslide Score": null
+        }
+      ]
+    },
+    {
+      "title": "Active Alerts",
+      "kind": "table",
+      "content": [
+        {
+          "Metric": "Total Active",
+          "Value": 1
+        },
+        {
+          "Metric": "Severity: Green",
+          "Value": 1
+        }
+      ]
+    }
+  ]
+}

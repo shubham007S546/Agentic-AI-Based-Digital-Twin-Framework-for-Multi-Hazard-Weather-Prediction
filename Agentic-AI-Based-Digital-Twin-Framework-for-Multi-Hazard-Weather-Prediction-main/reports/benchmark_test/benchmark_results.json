@@ -1,0 +1,61 @@
+{
+  "generated_at": "2026-09-17T15:36:50.550030+00:00",
+  "task_type": "regression",
+  "primary_metric": "rmse",
+  "n_models": 2,
+  "ranked_models": [
+    {
+      "rank": 1,
+      "model_name": "xgboost",
+      "experiment_name": "xgboost_benchmark",
+      "task_type": "regression",
+      "artifact_path": "C:\\Users\\shubh\\Downloads\\Agentic-AI-Based-Digital-Twin-Framework-for-Multi-Hazard-Weather-Prediction-main\\Agentic-AI-Based-Digital-Twin-Framework-for-Multi-Hazard-Weather-Prediction-main\\reports\\benchmark_test\\benchmark\\xgboost\\xgboost\\xgboost_benchmark\\model.joblib",
+      "registered_at": "2026-09-17T15:36:47.146148+00:00",
+      "rmse": 11.387381292364683,
+      "mae": 8.062461499738093,
+      "r2": -0.2576388151652098,
+      "n_samples": 19728,
+      "nse": -0.2576,
+      "kge": -0.6112,
+      "pbias": -150.5957,
+      "mape": 1056.6035,
+      "bias": 5.6416
+    },
+    {
+      "rank": 2,
+      "model_name": "lightgbm",
+      "experiment_name": "lightgbm_benchmark",
+      "task_type": "regression",
+      "artifact_path": "C:\\Users\\shubh\\Downloads\\Agentic-AI-Based-Digital-Twin-Framework-for-Multi-Hazard-Weather-Prediction-main\\Agentic-AI-Based-Digital-Twin-Framework-for-Multi-Hazard-Weather-Prediction-main\\reports\\benchmark_test\\benchmark\\lightgbm\\lightgbm\\lightgbm_benchmark\\model.joblib",
+      "registered_at": "2026-09-17T15:36:50.519476+00:00",
+      "rmse": 11.630528947977929,
+      "mae": 8.457634348412816,
+      "r2": -0.31191935848323715,
+      "n_samples": 19728,
+      "nse": -0.3119,
+      "kge": -0.7546,
+      "pbias": -166.6408,
+      "mape": 1131.632,
+      "bias": 6.2427
+    }
+  ],
+  "best_model": "xgboost",
+  "best_metrics": {
+    "rank": 1,
+    "model_name": "xgboost",
+    "experiment_name": "xgboost_benchmark",
+    "task_type": "regression",
+    "artifact_path": "C:\\Users\\shubh\\Downloads\\Agentic-AI-Based-Digital-Twin-Framework-for-Multi-Hazard-Weather-Prediction-main\\Agentic-AI-Based-Digital-Twin-Framework-for-Multi-Hazard-Weather-Prediction-main\\reports\\benchmark_test\\benchmark\\xgboost\\xgboost\\xgboost_benchmark\\model.joblib",
+    "registered_at": "2026-09-17T15:36:47.146148+00:00",
+    "rmse": 11.387381292364683,
+    "mae": 8.062461499738093,
+    "r2": -0.2576388151652098,
+    "n_samples": 19728,
+    "nse": -0.2576,
+    "kge": -0.6112,
+    "pbias": -150.5957,
+    "mape": 1056.6035,
+    "bias": 5.6416
+  },
+  "total_elapsed_seconds": 4.3
+}

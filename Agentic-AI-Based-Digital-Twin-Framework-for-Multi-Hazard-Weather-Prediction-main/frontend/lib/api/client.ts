@@ -33,11 +33,20 @@ export async function apiFetch<T>(
   }
   if (token) headers['Authorization'] = `Bearer ${token}`
 
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const method = (options.method || 'GET').toUpperCase()
+  const isServer = typeof window === 'undefined'
+
+  const fetchOptions: RequestInit = {
     ...options,
     headers,
-    next: { revalidate: 30 }, // ISR — revalidate every 30s on server
-  })
+  }
+
+  // Apply next revalidation only on server for GET requests
+  if (isServer && method === 'GET' && !('cache' in options)) {
+    ;(fetchOptions as any).next = { revalidate: 30 }
+  }
+
+  const res = await fetch(`${BASE_URL}${path}`, fetchOptions)
 
   if (!res.ok) {
     const text = await res.text().catch(() => 'Unknown error')

@@ -1,51 +1,25 @@
 """
 feature_engineering.py
-══════════════════════════════════════════════════════════════════════════════
-Phase 2 — Feature Engineering for Mandi District Rainfall Prediction
-PATCHED VERSION — fixes two label-generation bugs found in the original:
+==============================================================================
+Phase 2 -- Feature Engineering for Mandi, Kullu, and Chamba Weather Prediction
+Production-grade pipeline with:
+  1. Multi-district awareness (Mandi, Kullu, Chamba)
+  2. No inter-district boundary leakage during rolling/lag computation
+  3. Strict physical data validation and quality guards
+  4. IMD rainfall intensity classification (mm/hr)
+  5. IMD cloudburst detection (>= 100mm in 3h)
+  6. Multi-hazard landslide risk calculation
+  7. Pure ASCII logging (Windows cp1252 safe)
 
-  BUG 1 (rain_intensity_class unit mismatch):
-    imd_rainfall_mm is a DAILY total (mm/day) but was being binned directly
-    against RAIN_INTENSITY_BINS, which are IMD's HOURLY thresholds (mm/hr).
-    Result: a normal 35mm monsoon DAY got classified as "Heavy" HOURLY rain.
-    Fix: daily-resolution columns are never run through hourly intensity bins.
-    A separate daily-rainfall category is computed instead.
+Output files:
+  datasets/merged_dataset/final_dataset.parquet  (Master ML training set)
+  datasets/merged_dataset/final_dataset.csv      (Master inspection CSV)
+  datasets/merged_dataset/final_dataset_mandi.parquet / .csv
+  datasets/merged_dataset/final_dataset_kullu.parquet / .csv
+  datasets/merged_dataset/final_dataset_chamba.parquet / .csv
+  datasets/merged_dataset/feature_report.json    (Data quality report)
 
-  BUG 2 (cloudburst_flag always 0 / dead label):
-    rolling_precip_3h was built by dividing the IMD daily total by 24 and
-    rolling that flat rate — which mathematically can never reach the
-    100mm/3hr cloudburst threshold. The label was silently always 0.
-    Fix: cloudburst_flag is ONLY computed from a column that passes a
-    sub-daily-resolution quality check. If no such column exists, the
-    label is set to NaN (not 0) and a CRITICAL warning is logged, so a
-    model is never silently trained on a fabricated "never happens" label.
-
-  BONUS GUARD (dead-column detection):
-    Any precipitation column with zero variance among non-null values
-    (e.g. the GPM column that is 100% 0.0 in the current dataset) is
-    automatically excluded from rolling/label computation, with a logged
-    warning, instead of being trusted as "usable."
-
-What this does
-──────────────
-  1. Loads merged_dataset.parquet
-  2. Fixes Open-Meteo missing (reads it directly if merger missed it)
-  3. Filters to rows where core variables are present (2022-01-01 onwards)
-  4. Engineers features needed for rainfall/cloudburst/landslide prediction
-  5. Generates labels: rain_intensity_class, cloudburst_flag, landslide_risk
-     — with the data-quality guards above
-  6. Saves final clean dataset ready for ML, plus a data-quality section
-     in feature_report.json so downstream training code can check whether
-     each label is trustworthy before using it.
-
-Output files
-────────────
-  datasets/merged_dataset/final_dataset.parquet  ← for ML training
-  datasets/merged_dataset/final_dataset.csv      ← for inspection
-  datasets/merged_dataset/feature_report.json    ← statistics + data-quality flags
-
-Usage
-─────
+Usage:
   python feature_engineering.py
 """
 
@@ -71,32 +45,26 @@ LOGGER_NAME = "feature_engineering"
 # IMD cloudburst definition: >= 100mm in 3 hours
 CLOUDBURST_THRESHOLD_MM = 100.0
 
-# IMD rainfall intensity classification (mm/hr) — HOURLY thresholds only.
-# Source: IMD guidelines
+# IMD rainfall intensity classification (mm/hr) - HOURLY thresholds only.
 RAIN_INTENSITY_BINS   = [0, 0.1, 2.5, 7.5, 35.5, 64.4, float("inf")]
 RAIN_INTENSITY_LABELS = [0, 1, 2, 3, 4, 5]
 # 0=No rain, 1=Light, 2=Moderate, 3=Heavy, 4=Very Heavy, 5=Extreme
 
-# Daily rainfall categories (mm/day) — used ONLY for daily-resolution sources
-# like the raw IMD gridded product. Kept separate from hourly intensity so
-# daily totals never get mis-binned as hourly rates (the original bug).
+# Daily rainfall categories (mm/day) - fallback for daily-resolution sources
 DAILY_RAIN_BINS   = [0, 2.5, 15.5, 64.5, 124.5, 244.5, float("inf")]
 DAILY_RAIN_LABELS = [0, 1, 2, 3, 4, 5]
-# IMD daily categories: 0=No rain 1=Light 2=Moderate 3=Heavy
-# 4=Very Heavy 5=Extremely Heavy (mm/day)
 
-# Mandi is in monsoon zone — June to September
+# Himachal Pradesh monsoon zone - June to September
 MONSOON_MONTHS = {6, 7, 8, 9}
 
-# Minimum standard deviation among non-null values for a precip column to be
-# considered "live" data rather than a dead/broken feed (e.g. all-zero GPM).
+# Minimum standard deviation among non-null values for a precip column
 MIN_PRECIP_STD = 1e-6
 
 
 class FeatureEngineer:
     """
-    Loads merged dataset, engineers all features, generates labels,
-    and saves the final ML-ready dataset.
+    Loads merged dataset, engineers features per district, generates labels,
+    and saves the final ML-ready datasets.
     """
 
     def __init__(self) -> None:
@@ -104,46 +72,69 @@ class FeatureEngineer:
         log_dir      = OUTPUT_DIR / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         self._logger = get_logger(LOGGER_NAME, source_log_dir=log_dir)
-        self._data_quality: dict = {}   # populated during label generation
-
-    # ──────────────────────────────────────────────────────────────────────
-    #  ENTRY POINT
-    # ──────────────────────────────────────────────────────────────────────
+        self._data_quality: dict = {}
 
     def run(self) -> Path:
         self._logger.info("=" * 70)
-        self._logger.info("Feature Engineering Pipeline — START")
+        self._logger.info("Feature Engineering Pipeline - START")
         self._logger.info("=" * 70)
 
-        df = self._load_merged()
-        df = self._fix_openmeteo(df)
-        df = self._standardise_columns(df)
-        df = self._filter_overlap(df)
-        df = self._handle_missing(df)
-        df = self._add_time_features(df)
-        df = self._add_rolling_features(df)
-        df = self._generate_labels(df)
-        df = self._select_final_columns(df)
-        out_path = self._save(df)
+        df_raw = self._load_merged()
+        districts = df_raw["district"].unique().tolist() if "district" in df_raw.columns else [None]
+        self._logger.info(f"Districts found for feature engineering: {districts}")
+
+        processed_districts: dict[str, pd.DataFrame] = {}
+
+        for d in districts:
+            dist_label = d if d else "default"
+            self._logger.info("-" * 50)
+            self._logger.info(f"Processing district: {dist_label}")
+            self._logger.info("-" * 50)
+
+            if d is not None:
+                d_df = df_raw[df_raw["district"] == d].copy()
+            else:
+                d_df = df_raw.copy()
+
+            if "datetime" in d_df.columns and not isinstance(d_df.index, pd.DatetimeIndex):
+                d_df["datetime"] = pd.to_datetime(d_df["datetime"], utc=True)
+                d_df = d_df.set_index("datetime")
+            elif isinstance(d_df.index, pd.DatetimeIndex):
+                if d_df.index.tz is None:
+                    d_df.index = d_df.index.tz_localize("UTC")
+            d_df = d_df.sort_index()
+
+            d_df = self._fix_openmeteo(d_df)
+            d_df = self._standardise_columns(d_df)
+            d_df = self._filter_overlap(d_df)
+            d_df = self._handle_missing(d_df)
+            d_df = self._add_time_features(d_df)
+            d_df = self._add_rolling_features(d_df)
+            d_df = self._generate_labels(d_df)
+            d_df = self._select_final_columns(d_df)
+
+            processed_districts[dist_label] = d_df
+
+        out_path = self._save(processed_districts)
 
         self._logger.info("=" * 70)
-        self._logger.info("Feature Engineering — COMPLETE")
-        self._logger.info(f"Final shape : {len(df):,} rows × {len(df.columns)} cols")
-        self._logger.info(f"Date range  : {df.index.min()} → {df.index.max()}")
+        self._logger.info("Feature Engineering - COMPLETE")
+        total_rows = sum(len(df) for df in processed_districts.values())
+        first_df = list(processed_districts.values())[0]
+        self._logger.info(f"Total shape : {total_rows:,} rows x {len(first_df.columns)} cols")
         self._logger.info(f"Output      : {out_path}")
         if self._data_quality.get("cloudburst_label_trustworthy") is False:
             self._logger.warning(
-                "⚠️  cloudburst_flag is NaN for all rows — no sub-daily "
-                "precipitation source passed quality checks. Fix the GPM "
-                "or Open-Meteo merge before training on this label."
+                "[WARN] cloudburst_flag is NaN for all rows - no sub-daily "
+                "precipitation source passed quality checks."
             )
         self._logger.info("=" * 70)
 
         return out_path
 
-    # ──────────────────────────────────────────────────────────────────────
-    #  STEP 1: Load
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
+    #  STEP 1: Load merged dataset
+    # ----------------------------------------------------------------------
 
     def _load_merged(self) -> pd.DataFrame:
         parquet = MERGED_DIR / "merged_dataset.parquet"
@@ -153,19 +144,23 @@ class FeatureEngineer:
                 "Run merger.py first."
             )
         df = pd.read_parquet(parquet)
-        if not isinstance(df.index, pd.DatetimeIndex):
+        if "datetime" in df.columns:
+            df["datetime"] = pd.to_datetime(df["datetime"], utc=True)
+            if not isinstance(df.index, pd.DatetimeIndex):
+                df = df.set_index("datetime")
+        elif not isinstance(df.index, pd.DatetimeIndex):
             df.index = pd.to_datetime(df.index, utc=True)
         if df.index.tz is None:
             df.index = df.index.tz_localize("UTC")
         self._logger.info(
-            f"Loaded merged dataset: {len(df):,} rows × {len(df.columns)} cols"
+            f"Loaded merged dataset: {len(df):,} rows x {len(df.columns)} cols"
         )
         self._logger.info(f"Columns: {list(df.columns)}")
         return df
 
-    # ──────────────────────────────────────────────────────────────────────
-    #  STEP 2: Fix Open-Meteo if missed by merger
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
+    #  STEP 2: Fix Open-Meteo if missed
+    # ----------------------------------------------------------------------
 
     def _fix_openmeteo(self, df: pd.DataFrame) -> pd.DataFrame:
         om_cols = [c for c in df.columns if c.startswith("openmeteo_")]
@@ -176,7 +171,7 @@ class FeatureEngineer:
             return df
 
         self._logger.warning(
-            "Open-Meteo missing from merged dataset — loading directly..."
+            "Open-Meteo missing from merged dataset - loading directly..."
         )
 
         src_dir   = Path(self._cfg["sources"]["openmeteo"]["download_dir"])
@@ -189,34 +184,20 @@ class FeatureEngineer:
             csvs = sorted(clean_dir.glob("*.csv"))
             if not csvs:
                 self._logger.error(
-                    "Open-Meteo: NO FILES FOUND in cleaned dir. This source "
-                    "will be entirely absent from the final dataset, which "
-                    "removes your only reliable native-hourly precipitation "
-                    "feed. Re-run openmeteo_collector.py before proceeding."
+                    "Open-Meteo: NO FILES FOUND in cleaned dir. Source absent."
                 )
                 return df
             om_df = pd.concat([pd.read_csv(f) for f in csvs], ignore_index=True)
 
-        # Case A: the index is already datetime-like (common after loading
-        # a parquet that was saved with a DatetimeIndex — parquet stores
-        # the index separately from columns, so it won't show up in
-        # om_df.columns even though the CSV version of the same data has
-        # it as a plain column).
         if isinstance(om_df.index, pd.DatetimeIndex):
             om_df.index = pd.to_datetime(om_df.index, utc=True) if om_df.index.tz is None else om_df.index
             om_df.index.name = "datetime"
         else:
-            # Case B: look for it as a column under any known name.
             dt_col = None
             for col in ["datetime", "datetime_utc", "date", "time"]:
                 if col in om_df.columns:
                     dt_col = col
                     break
-
-            # Case C: pandas sometimes round-trips an unnamed/old index as
-            # a literal "index" or "Unnamed: 0" column when read back in —
-            # check if that column actually parses as datetimes before
-            # giving up.
             if dt_col is None:
                 for col in ["index", "Unnamed: 0"]:
                     if col in om_df.columns:
@@ -226,20 +207,14 @@ class FeatureEngineer:
                             break
                         except (ValueError, TypeError):
                             continue
-
             if dt_col is None:
-                self._logger.error(
-                    f"Open-Meteo: no datetime column found and index is "
-                    f"'{type(om_df.index).__name__}', not datetime-like. "
-                    f"Columns: {list(om_df.columns)}. Source will be dropped. "
-                    f"Check how openmeteo_mandi_cleaned.parquet was saved — "
-                    f"the index was likely lost or never set before saving."
-                )
+                self._logger.error("Open-Meteo: no datetime column found.")
                 return df
 
             om_df[dt_col] = pd.to_datetime(om_df[dt_col], utc=True)
             om_df = om_df.set_index(dt_col)
             om_df.index.name = "datetime"
+
         om_df = om_df.select_dtypes(include="number")
         om_df = om_df.resample("h").mean()
         om_df.columns = [f"openmeteo_{c}" for c in om_df.columns]
@@ -252,54 +227,54 @@ class FeatureEngineer:
         )
         return df
 
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
     #  STEP 3: Standardise column names
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
 
     def _standardise_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         rename_map = {
-            "openmeteo_temperature_2m":   "temperature_2m",
-            "era5_temperature_2m":        "temperature_2m",
-            "openmeteo_dewpoint_2m":      "dewpoint_2m",
-            "era5_dewpoint_2m":           "dewpoint_2m",
+            "openmeteo_temperature_2m":       "temperature_2m",
+            "era5_temperature_2m":            "temperature_2m",
+            "openmeteo_dew_point_2m":         "dewpoint_2m",
+            "openmeteo_dewpoint_2m":          "dewpoint_2m",
+            "era5_dewpoint_2m":               "dewpoint_2m",
             "openmeteo_relative_humidity_2m": "relative_humidity",
-            "openmeteo_surface_pressure": "surface_pressure",
-            "era5_surface_pressure":      "surface_pressure",
-            "era5_mslp":                  "mslp",
-            "openmeteo_wind_speed_10m":   "wind_speed_10m",
-            "era5_wind_speed_10m":        "wind_speed_10m",
-            "openmeteo_wind_direction_10m":"wind_direction_10m",
-            "era5_wind_dir_10m":          "wind_direction_10m",
-            "openmeteo_wind_gusts_10m":   "wind_gusts_10m",
-            "openmeteo_cloud_cover":      "cloud_cover",
-            "era5_cloud_cover":           "cloud_cover",
-            # Precipitation — kept SEPARATE per source on purpose. Do not
-            # collapse these into one "precipitation" name; the quality
-            # checks in _select_precip_source() need to compare sources.
-            "openmeteo_precipitation":    "precipitation_openmeteo",
-            "openmeteo_rain":             "rain_openmeteo",
-            "openmeteo_snowfall":         "snowfall",
-            "openmeteo_weather_code":     "weather_code",
-            "gpm_precipitation":          "precipitation_gpm",
-            "imd_rainfall_mm":            "imd_rainfall_mm",  # daily total, mm/day
-            "era5_cape":                  "cape",
-            "era5_wind_u_10m":            "wind_u_10m",
-            "era5_wind_v_10m":            "wind_v_10m",
+            "openmeteo_surface_pressure":     "surface_pressure",
+            "era5_surface_pressure":          "surface_pressure",
+            "era5_mslp":                      "mslp",
+            "openmeteo_wind_speed_10m":       "wind_speed_10m",
+            "era5_wind_speed_10m":            "wind_speed_10m",
+            "openmeteo_wind_direction_10m":   "wind_direction_10m",
+            "era5_wind_dir_10m":              "wind_direction_10m",
+            "openmeteo_wind_gusts_10m":       "wind_gusts_10m",
+            "openmeteo_cloud_cover":          "cloud_cover",
+            "era5_cloud_cover":               "cloud_cover",
+            "openmeteo_precipitation":        "precipitation_openmeteo",
+            "openmeteo_rain":                 "rain_openmeteo",
+            "openmeteo_snowfall":             "snowfall",
+            "openmeteo_weather_code":         "weather_code",
+            "openmeteo_soil_temperature_0_to_7cm": "soil_temperature_0_to_7cm",
+            "openmeteo_soil_moisture_0_to_7cm":    "soil_moisture_0_to_7cm",
+            "gpm_precipitation":              "precipitation_gpm",
+            "imd_rainfall_mm":                "imd_rainfall_mm",
+            "era5_cape":                      "cape",
+            "era5_wind_u_10m":                "wind_u_10m",
+            "era5_wind_v_10m":                "wind_v_10m",
         }
         actual_rename = {k: v for k, v in rename_map.items() if k in df.columns}
         df = df.rename(columns=actual_rename)
         df = df.loc[:, ~df.columns.duplicated(keep="first")]
-        self._logger.info(f"Columns after standardisation: {list(df.columns)}")
+        self._logger.info(f"Columns after standardisation: {len(df.columns)} columns")
         return df
 
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
     #  STEP 4: Filter to overlap window
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
 
     def _filter_overlap(self, df: pd.DataFrame) -> pd.DataFrame:
-        start = pd.Timestamp("2005-01-01", tz="UTC")
-        df = df.loc[start:]
-        self._logger.info(f"After 2025-01-01 filter: {len(df):,} rows")
+        start = pd.Timestamp("2022-01-01", tz="UTC")
+        df = df[df.index >= start]
+        self._logger.info(f"After 2022-01-01 filter: {len(df):,} rows")
 
         core_cols = [
             c for c in [
@@ -314,13 +289,13 @@ class FeatureEngineer:
             before   = len(df)
             df       = df[has_data]
             self._logger.info(
-                f"After core-variable filter: {before:,} → {len(df):,} rows"
+                f"After core-variable filter: {before:,} -> {len(df):,} rows"
             )
         return df
 
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
     #  STEP 5: Handle missing values
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
 
     def _handle_missing(self, df: pd.DataFrame) -> pd.DataFrame:
         self._logger.info("Handling missing values...")
@@ -332,22 +307,25 @@ class FeatureEngineer:
 
         for col in numeric_cols:
             n   = int(df[col].isna().sum())
-            pct = n / len(df) * 100
+            pct = n / len(df) * 100 if len(df) > 0 else 0.0
             if pct > 5:
                 self._logger.warning(
                     f"  Still missing after imputation: {col} = {pct:.1f}%"
                 )
         return df
 
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
     #  STEP 6: Time features
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
 
     def _add_time_features(self, df: pd.DataFrame) -> pd.DataFrame:
         idx_ist = df.index.tz_convert("Asia/Kolkata")
-        df["hour"]       = idx_ist.hour
-        df["month"]      = idx_ist.month
-        df["day_of_year"]= idx_ist.dayofyear
+        df["hour"]        = idx_ist.hour
+        df["month"]       = idx_ist.month
+        df["day_of_year"] = idx_ist.dayofyear
+        df["week_of_year"]= idx_ist.isocalendar().week.astype(np.int8)
+        df["day_of_week"] = idx_ist.dayofweek.astype(np.int8)
+        df["is_weekend"]  = idx_ist.dayofweek.isin([5, 6]).astype(np.int8)
 
         def month_to_season(m: int) -> int:
             if m in (12, 1, 2):
@@ -367,23 +345,15 @@ class FeatureEngineer:
         df["month_cos"] = np.cos(2 * np.pi * df["month"] / 12)
 
         self._logger.info(
-            "Time features added: hour, month, season, is_monsoon + cyclical encoding"
+            "Time features added: hour, month, season, is_monsoon, week_of_year, day_of_week + cyclic"
         )
         return df
 
-    # ──────────────────────────────────────────────────────────────────────
-    #  QUALITY GUARD — shared by rolling features and label generation
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
+    #  QUALITY GUARD
+    # ----------------------------------------------------------------------
 
     def _column_quality(self, df: pd.DataFrame, col: str) -> dict:
-        """
-        Inspect a precipitation column and report whether it's:
-          - 'live'      : has real, varying, non-null data
-          - 'dead'      : present but zero-variance (e.g. broken GPM feed)
-          - 'sub_daily' : actually varies hour-to-hour (not a daily value
-                          forward-filled 24x), so safe to use for 3h rolling
-                          and cloudburst detection
-        """
         s = df[col].dropna()
         result = {"n_valid": int(s.shape[0]), "live": False, "sub_daily": False}
         if s.shape[0] < 100:
@@ -395,20 +365,12 @@ class FeatureEngineer:
         if not result["live"]:
             return result
 
-        # Sub-daily check: among days with MEANINGFUL rainfall, does the
-        # column vary hour-to-hour, or is it flat (a daily total forward-
-        # filled to 24 identical hourly rows)? We restrict to rainy days
-        # because dry days are correctly flat at 0.0 regardless of source
-        # resolution — checking all days would wrongly penalize genuine
-        # hourly data in a place like Mandi where most days have no rain.
         daily_sum     = s.groupby(s.index.date).sum()
         daily_nunique = s.groupby(s.index.date).nunique()
-        rain_days = daily_sum[daily_sum > 0.5].index  # >0.5mm/day threshold
+        rain_days = daily_sum[daily_sum > 0.5].index
         result["n_rain_days"] = int(len(rain_days))
 
         if len(rain_days) < 5:
-            # Too few rainy days in the data to judge reliably — don't
-            # reject the column on this basis, but flag it as unverified.
             result["sub_daily"] = True
             result["sub_daily_basis"] = "insufficient_rain_days_to_judge"
             return result
@@ -420,13 +382,6 @@ class FeatureEngineer:
         return result
 
     def _select_precip_source(self, df: pd.DataFrame, require_sub_daily: bool) -> tuple[str | None, dict]:
-        """
-        Pick the best precipitation column for a given purpose.
-        require_sub_daily=True  -> for rolling_precip_3h / cloudburst_flag
-        require_sub_daily=False -> for daily-level features (rain_intensity
-                                    fallback, rolling_precip_24h/72h)
-        Returns (column_name_or_None, quality_report_for_all_candidates)
-        """
         candidates = [c for c in
                       ["precipitation_openmeteo", "precipitation_gpm", "imd_rainfall_mm"]
                       if c in df.columns]
@@ -436,8 +391,7 @@ class FeatureEngineer:
             report[c] = q
             if not q["live"]:
                 self._logger.warning(
-                    f"  Precip source '{c}' has {q['n_valid']} non-null values "
-                    f"but zero variance — treating as DEAD/broken, excluding it."
+                    f"  Precip source '{c}' has {q['n_valid']} values but zero variance - excluding."
                 )
 
         usable = [c for c in candidates if report[c]["live"]]
@@ -447,20 +401,15 @@ class FeatureEngineer:
         if not usable:
             return None, report
 
-        # Prefer the one with the most valid rows among usable candidates
         best = max(usable, key=lambda c: report[c]["n_valid"])
         return best, report
 
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
     #  STEP 7: Rolling precipitation features
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
 
     def _add_rolling_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        # Sub-daily source for short-window rolling (3h, 6h) — required for
-        # these to mean anything.
         short_col, short_report = self._select_precip_source(df, require_sub_daily=True)
-        # Any live source for long-window rolling (24h, 72h) — daily totals
-        # are fine here since the window already spans a day+.
         long_col, long_report = self._select_precip_source(df, require_sub_daily=False)
 
         self._data_quality["precip_source_report"] = {**short_report, **long_report}
@@ -472,26 +421,25 @@ class FeatureEngineer:
             hourly_precip_short = df[short_col]
             df["rolling_precip_3h"] = hourly_precip_short.rolling(window=3, min_periods=1).sum()
             df["rolling_precip_6h"] = hourly_precip_short.rolling(window=6, min_periods=1).sum()
-            df["precip_lag_1h"] = hourly_precip_short.shift(1)
-            df["precip_lag_3h"] = hourly_precip_short.shift(3)
-            df["precip_lag_6h"] = hourly_precip_short.shift(6)
+            df["precip_lag_1h"]  = hourly_precip_short.shift(1).fillna(0.0)
+            df["precip_lag_3h"]  = hourly_precip_short.shift(3).fillna(0.0)
+            df["precip_lag_6h"]  = hourly_precip_short.shift(6).fillna(0.0)
+            df["precip_lag_12h"] = hourly_precip_short.shift(12).fillna(0.0)
+            df["precip_lag_24h"] = hourly_precip_short.shift(24).fillna(0.0)
+            df["precip_lag_48h"] = hourly_precip_short.shift(48).fillna(0.0)
+            df["precip_lag_72h"] = hourly_precip_short.shift(72).fillna(0.0)
         else:
             self._logger.error(
-                "No live sub-daily precipitation source available — "
-                "rolling_precip_3h/6h and lag features cannot be trusted. "
-                "Setting to NaN rather than fabricating zeros. Fix the GPM "
-                "zero-value bug or restore the Open-Meteo merge to resolve."
+                "No live sub-daily precipitation source available. Setting rolling/lag to NaN."
             )
-            df["rolling_precip_3h"] = np.nan
-            df["rolling_precip_6h"] = np.nan
-            df["precip_lag_1h"] = np.nan
-            df["precip_lag_3h"] = np.nan
-            df["precip_lag_6h"] = np.nan
+            for c in ["rolling_precip_3h", "rolling_precip_6h", "precip_lag_1h", "precip_lag_3h",
+                      "precip_lag_6h", "precip_lag_12h", "precip_lag_24h", "precip_lag_48h", "precip_lag_72h"]:
+                df[c] = np.nan
 
         if long_col:
             self._logger.info(f"24h/72h rolling features based on: {long_col}")
             if long_col == "imd_rainfall_mm":
-                hourly_precip_long = df[long_col] / 24.0  # daily total -> hourly rate, OK for 24h+ windows
+                hourly_precip_long = df[long_col] / 24.0
             else:
                 hourly_precip_long = df[long_col]
             df["rolling_precip_24h"] = hourly_precip_long.rolling(window=24, min_periods=1).sum()
@@ -503,24 +451,14 @@ class FeatureEngineer:
 
         return df
 
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
     #  STEP 8: Generate labels
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
 
     def _generate_labels(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        1. rain_intensity_class (0–5) — ONLY from a sub-daily hourly-rate
-           column, binned against HOURLY thresholds. If none available,
-           fall back to a DAILY category (separate bins) rather than
-           mis-binning a daily total against hourly thresholds.
-        2. cloudburst_flag (0/1) — ONLY from rolling_precip_3h built off a
-           verified sub-daily source. NaN (not 0) if unavailable.
-        3. landslide_risk (0/1/2) — rule-based off rolling_precip_24h +
-           season + cloudburst_flag.
-        """
         short_col = self._data_quality.get("short_window_precip_source")
 
-        # ── Label 1: Rain intensity class ────────────────────────────────
+        # Label 1: Rain intensity class
         if short_col:
             df["rain_intensity_class"] = pd.cut(
                 df[short_col].fillna(0),
@@ -530,20 +468,13 @@ class FeatureEngineer:
             ).astype(np.int8)
             self._data_quality["rain_intensity_class_basis"] = f"hourly:{short_col}"
         elif "imd_rainfall_mm" in df.columns:
-            # Daily total -> daily category, NOT the hourly bins.
             df["rain_intensity_class"] = pd.cut(
                 df["imd_rainfall_mm"].fillna(0),
                 bins=DAILY_RAIN_BINS,
                 labels=DAILY_RAIN_LABELS,
                 right=False,
             ).astype(np.int8)
-            self._data_quality["rain_intensity_class_basis"] = "daily:imd_rainfall_mm (daily category, not hourly)"
-            self._logger.warning(
-                "rain_intensity_class computed from DAILY imd_rainfall_mm using "
-                "daily-category bins (not hourly bins) since no sub-daily "
-                "source is available — label represents daily intensity, not "
-                "true hourly intensity. Treat with caution for an hourly model."
-            )
+            self._data_quality["rain_intensity_class_basis"] = "daily:imd_rainfall_mm"
         else:
             df["rain_intensity_class"] = np.int8(0)
             self._data_quality["rain_intensity_class_basis"] = "none"
@@ -551,11 +482,11 @@ class FeatureEngineer:
         class_counts = df["rain_intensity_class"].value_counts().sort_index()
         self._logger.info(f"rain_intensity_class distribution:\n{class_counts}")
 
-        # ── Label 2: Cloudburst flag ──────────────────────────────────────
+        # Label 2: Cloudburst flag
         if short_col and df["rolling_precip_3h"].notna().any():
             df["cloudburst_flag"] = (
                 df["rolling_precip_3h"] >= CLOUDBURST_THRESHOLD_MM
-            ).astype("float").astype("Int8")  # nullable int so NaNs survive
+            ).astype("float").astype("Int8")
             n_cb = int((df["cloudburst_flag"] == 1).sum())
             self._logger.info(
                 f"cloudburst_flag: {n_cb} events detected "
@@ -566,15 +497,13 @@ class FeatureEngineer:
         else:
             df["cloudburst_flag"] = pd.array([np.nan] * len(df), dtype="Float64")
             self._logger.error(
-                "cloudburst_flag set to NaN for ALL rows — no verified "
-                "sub-daily precipitation source. DO NOT train on this "
-                "label until the GPM/Open-Meteo source issue is fixed."
+                "cloudburst_flag set to NaN for ALL rows - no verified sub-daily precipitation source."
             )
             self._data_quality["cloudburst_label_trustworthy"] = False
             self._data_quality["cloudburst_events"] = 0
 
-        # ── Label 3: Landslide risk ───────────────────────────────────────
-        df["landslide_risk"] = np.int8(0)  # default Low
+        # Label 3: Landslide risk
+        df["landslide_risk"] = np.int8(0)
 
         if "rolling_precip_24h" in df.columns and df["rolling_precip_24h"].notna().any():
             medium_mask = (
@@ -598,38 +527,29 @@ class FeatureEngineer:
                 f"Medium={risk_counts.get(1,0)} "
                 f"High={risk_counts.get(2,0)}"
             )
-            if risk_counts.get(2, 0) < 20:
-                self._logger.warning(
-                    f"  Only {risk_counts.get(2,0)} 'High' landslide_risk rows "
-                    "in the whole dataset — too few for a 3-class classifier "
-                    "to learn reliably. Consider a binary Low-vs-Elevated "
-                    "target, or class-weighting, once more data is collected."
-                )
-        else:
-            self._logger.warning(
-                "landslide_risk left at default 'Low' for all rows — no "
-                "usable rolling_precip_24h available."
-            )
-
         return df
 
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
     #  STEP 9: Select final columns
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
 
     def _select_final_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         desired_order = [
+            "district",
             "temperature_2m", "dewpoint_2m", "relative_humidity",
             "surface_pressure", "mslp",
             "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m",
             "wind_u_10m", "wind_v_10m",
-            "cloud_cover", "cape",
+            "cloud_cover", "cape", "lifted_index",
             "precipitation_openmeteo", "rain_openmeteo", "snowfall",
             "precipitation_gpm", "imd_rainfall_mm",
+            "soil_temperature_0_to_7cm", "soil_moisture_0_to_7cm",
             "rolling_precip_3h", "rolling_precip_6h",
             "rolling_precip_24h", "rolling_precip_72h",
             "precip_lag_1h", "precip_lag_3h", "precip_lag_6h",
+            "precip_lag_12h", "precip_lag_24h", "precip_lag_48h", "precip_lag_72h",
             "hour", "month", "day_of_year", "season", "is_monsoon",
+            "week_of_year", "day_of_week", "is_weekend",
             "hour_sin", "hour_cos", "month_sin", "month_cos",
             "rain_intensity_class", "cloudburst_flag", "landslide_risk",
         ]
@@ -638,49 +558,60 @@ class FeatureEngineer:
         self._logger.info(f"Final columns ({len(final_cols)}): {final_cols}")
         return df
 
-    # ──────────────────────────────────────────────────────────────────────
-    #  STEP 10: Save
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
+    #  STEP 10: Save datasets
+    # ----------------------------------------------------------------------
 
-    def _save(self, df: pd.DataFrame) -> Path:
+    def _save(self, processed_districts: dict[str, pd.DataFrame]) -> Path:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+        for dist_name, d_df in processed_districts.items():
+            if dist_name != "default":
+                pq_d = OUTPUT_DIR / f"final_dataset_{dist_name}.parquet"
+                csv_d = OUTPUT_DIR / f"final_dataset_{dist_name}.csv"
+                d_df.to_parquet(pq_d, engine="pyarrow")
+                d_df.to_csv(csv_d)
+                self._logger.info(f"Saved district '{dist_name}': {len(d_df):,} rows -> {pq_d.name}")
+
+        all_dfs = list(processed_districts.values())
+        master_df = pd.concat(all_dfs, axis=0) if len(all_dfs) > 1 else all_dfs[0]
 
         parquet_path = OUTPUT_DIR / "final_dataset.parquet"
         csv_path     = OUTPUT_DIR / "final_dataset.csv"
         report_path  = OUTPUT_DIR / "feature_report.json"
 
-        df.to_parquet(parquet_path, engine="pyarrow")
-        df.to_csv(csv_path)
+        master_df.to_parquet(parquet_path, engine="pyarrow")
+        master_df.to_csv(csv_path)
 
         pq_mb  = parquet_path.stat().st_size / 1_048_576
         csv_mb = csv_path.stat().st_size    / 1_048_576
-        self._logger.info(f"Parquet: {parquet_path.name} ({pq_mb:.1f} MB)")
-        self._logger.info(f"CSV    : {csv_path.name} ({csv_mb:.1f} MB)")
+        self._logger.info(f"Master Parquet: {parquet_path.name} ({pq_mb:.1f} MB)")
+        self._logger.info(f"Master CSV    : {csv_path.name} ({csv_mb:.1f} MB)")
 
         report = {
             "generated_at":    datetime.now(timezone.utc).isoformat(),
-            "rows":            len(df),
-            "columns":         len(df.columns),
-            "date_min":        str(df.index.min()),
-            "date_max":        str(df.index.max()),
+            "rows":            len(master_df),
+            "columns":         len(master_df.columns),
+            "districts":       list(processed_districts.keys()),
+            "date_min":        str(master_df.index.min()),
+            "date_max":        str(master_df.index.max()),
             "feature_columns": [
-                c for c in df.columns
+                c for c in master_df.columns
                 if c not in ("rain_intensity_class", "cloudburst_flag", "landslide_risk")
             ],
             "label_columns": ["rain_intensity_class", "cloudburst_flag", "landslide_risk"],
             "rain_intensity_distribution": (
-                df["rain_intensity_class"].value_counts().sort_index().to_dict()
-                if "rain_intensity_class" in df.columns else {}
+                master_df["rain_intensity_class"].value_counts().sort_index().to_dict()
+                if "rain_intensity_class" in master_df.columns else {}
             ),
             "cloudburst_events": self._data_quality.get("cloudburst_events", 0),
             "landslide_risk_distribution": (
-                df["landslide_risk"].value_counts().sort_index().to_dict()
-                if "landslide_risk" in df.columns else {}
+                master_df["landslide_risk"].value_counts().sort_index().to_dict()
+                if "landslide_risk" in master_df.columns else {}
             ),
             "missing_pct": {
-                col: round(df[col].isna().mean() * 100, 2) for col in df.columns
+                col: round(master_df[col].isna().mean() * 100, 2) for col in master_df.columns
             },
-            # ── NEW: explicit data-quality flags for training code to check ──
             "data_quality": {
                 "cloudburst_label_trustworthy": self._data_quality.get(
                     "cloudburst_label_trustworthy", False

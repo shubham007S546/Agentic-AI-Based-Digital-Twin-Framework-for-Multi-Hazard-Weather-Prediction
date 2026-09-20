@@ -11,7 +11,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+import os
 from pathlib import Path
+import sys
 from typing import Optional
 
 from .exceptions import ConfigValidationError
@@ -97,6 +99,10 @@ class BaseModelConfig:
         )
 
     def artifact_path(self, filename: str) -> Path:
-        p = Path(self.artifacts_dir) / self.model_name / self.experiment_name
-        p.mkdir(parents=True, exist_ok=True)
+        p = (Path(self.artifacts_dir) / self.model_name / self.experiment_name).resolve()
+        p_str = str(p)
+        if sys.platform == "win32" and not p_str.startswith("\\\\?\\"):
+            os.makedirs(f"\\\\?\\{p_str}", exist_ok=True)
+        else:
+            p.mkdir(parents=True, exist_ok=True)
         return p / filename

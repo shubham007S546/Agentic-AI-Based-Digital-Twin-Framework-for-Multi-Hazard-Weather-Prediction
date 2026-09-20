@@ -653,7 +653,13 @@ class OverpassClient:
                     if _is_rate_limited(exc):
                         hits = self._rate_limit_hits.get(job_key, 0) + 1
                         self._rate_limit_hits[job_key] = hits
-                        base = min(30.0 * (2 ** (hits - 1)), 300.0)
+                        if hits >= self.max_rate_limit_hits_per_mirror:
+                            self.logger.warning(
+                                "[%s] Hit rate-limit/timeout %d times on %s. Advancing to next mirror.",
+                                job_key, hits, mirror,
+                            )
+                            break
+                        base = min(15.0 * (2 ** (hits - 1)), 120.0)
                         sleep_time = random.uniform(base * 0.5, base)
                         self.logger.warning(
                             "[%s] Overpass rate-limited on %s (hit #%d, not counted "

@@ -49,13 +49,31 @@ def fetch_prediction(district: str, hazard_type: str, history: Optional[list] = 
 def fetch_recent_alerts(limit: int = 20) -> Dict[str, Any]:
     url = f"{settings.alert_agent_url}/api/v1/alerts/current"
     try:
-        with httpx.Client(timeout=settings.agent_request_timeout_seconds) as client:
+        with httpx.Client(timeout=min(2.0, settings.agent_request_timeout_seconds)) as client:
             resp = client.get(url, params={"limit": limit})
             resp.raise_for_status()
             return {"status": "ok", "alerts": resp.json()}
     except Exception as exc:
-        logger.warning("Alert Agent unavailable: %s", exc)
-        return {"status": "error", "note": str(exc), "alerts": []}
+        logger.debug("Alert Agent HTTP unavailable (%s), trying in-process alert graph", exc)
+
+    try:
+        from agents.alert_risk.graph import alert_graph
+        state = {
+            "request": {
+                "location": "Himachal Pradesh",
+                "district": "Mandi",
+                "hazard_types": ["rainfall", "flood", "landslide"],
+                "horizon": "24h",
+                "notify": False,
+            },
+            "errors": [],
+        }
+        res = alert_graph.invoke(state)
+        alert = res.get("alert", {})
+        return {"status": "ok", "source": "in_process_alert_graph", "alerts": [alert] if alert else []}
+    except Exception as in_err:
+        logger.warning("In-process alert graph fallback failed: %s", in_err)
+        return {"status": "error", "note": str(in_err), "alerts": []}
 
 
 def fetch_digital_twin_scenario(district: str, rainfall_mm: float) -> Dict[str, Any]:
@@ -63,10 +81,18 @@ def fetch_digital_twin_scenario(district: str, rainfall_mm: float) -> Dict[str, 
     payload = {"district": district, "rainfall_mm": rainfall_mm, "duration_hours": 24,
                "hazard_types": ["flood", "landslide"]}
     try:
-        with httpx.Client(timeout=settings.agent_request_timeout_seconds) as client:
+        with httpx.Client(timeout=min(2.0, settings.agent_request_timeout_seconds)) as client:
             resp = client.post(url, json=payload)
             resp.raise_for_status()
             return resp.json()
     except Exception as exc:
-        logger.warning("Digital Twin Agent unavailable for %s: %s", district, exc)
-        return {"status": "error", "note": str(exc)}
+        logger.debug("Digital Twin HTTP unavailable (%s), trying in-process twin graph", exc)
+
+    try:
+        from agents.digital_twin.graph import digital_twin_graph
+        state = {"request": payload, "errors": []}
+        res = digital_twin_graph.invoke(state)
+        return res.get("response", {}) or {"status": "ok", "district": district, "simulation": res.get("scenario_result", {})}
+    except Exception as in_err:
+        logger.warning("In-process digital twin graph fallback failed: %s", in_err)
+        return {"status": "error", "note": str(in_err)}

@@ -99,6 +99,24 @@ async def get_current_token_data(
 CurrentUserToken = Annotated[TokenData, Depends(get_current_token_data)]
 
 
+async def get_optional_token_data(
+    request: Request,
+    token: Annotated[str | None, Depends(oauth2_scheme)],
+    redis: Annotated[Redis, Depends(get_cache_client)],
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+) -> TokenData | None:
+    if not token:
+        return None
+    try:
+        return await get_current_token_data(request, token, redis, db)
+    except Exception:
+        return None
+
+
+OptionalCurrentUserToken = Annotated[TokenData | None, Depends(get_optional_token_data)]
+
+
+
 # Helper factory for RBAC (Role-Based Access Control)
 def require_role(allowed_roles: list[str]):
     """

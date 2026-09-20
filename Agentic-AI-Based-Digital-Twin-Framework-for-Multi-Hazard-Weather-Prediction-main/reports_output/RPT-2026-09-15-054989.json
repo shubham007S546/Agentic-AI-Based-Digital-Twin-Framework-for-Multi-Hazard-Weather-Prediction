@@ -1,0 +1,56 @@
+{
+  "metadata": {
+    "report_id": "RPT-2026-09-15-054989",
+    "report_type": "multi_hazard",
+    "format": "json",
+    "version": 4,
+    "generated_at": "2026-09-15T05:32:48.320959+00:00",
+    "districts": [
+      "Mandi"
+    ],
+    "data_sources_used": [
+      "alert_agent"
+    ],
+    "data_completeness": 0.5
+  },
+  "sections": [
+    {
+      "title": "Summary",
+      "kind": "text",
+      "content": "**Executive Summary \u2013 Mandi District (Multi\u2011Hazard Report)**  \nThe monitoring system has identified a single active alert across the districts under observation, which includes Mandi. This alert indicates that at least one weather\u2011related or other natural hazard condition is currently in effect for the area. Stakeholders should remain vigilant, follow official guidance, and be prepared to implement any recommended safety measures until the alert is lifted."
+    },
+    {
+      "title": "Key Insights",
+      "kind": "text",
+      "content": "- 1 active alert(s) across monitored districts."
+    },
+    {
+      "title": "District Metrics",
+      "kind": "table",
+      "content": [
+        {
+          "District": "Mandi",
+          "Temp (C)": null,
+          "Humidity (%)": null,
+          "Predicted Rainfall (mm)": null,
+          "Digital Twin Risk": null,
+          "Landslide Score": null
+        }
+      ]
+    },
+    {
+      "title": "Active Alerts",
+      "kind": "table",
+      "content": [
+        {
+          "Metric": "Total Active",
+          "Value": 1
+        },
+        {
+          "Metric": "Severity: Green",
+          "Value": 1
+        }
+      ]
+    }
+  ]
+}

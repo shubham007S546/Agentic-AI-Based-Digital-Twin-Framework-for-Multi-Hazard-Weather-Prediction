@@ -33,13 +33,11 @@ import {
   getAgentHealth,
   getRagHealth,
   getAgentPrompts,
-  planTripRoute,
   runAgentSync,
   type AgentHealth,
   type RagHealth,
   type PromptSpecification,
   type AgentExecutionReport,
-  type TripPlanResponse,
 } from '@/lib/api/agents'
 
 type AgentStatus = 'working' | 'standby' | 'complete' | 'warning'
@@ -62,7 +60,6 @@ type ActivityEvent = {
 }
 
 const INITIAL_AGENTS: Agent[] = [
-  { id: 'trip_advisory', name: 'Trip Advisory', role: 'Mountain route safety & costs', status: 'working', task: 'Assessing Mandi-Manali NH-21 corridor & cost breakdown', progress: 85, color: 'text-amber-400' },
   { id: 'orchestrator', name: 'Orchestrator', role: 'Mission control & routing', status: 'working', task: 'Decomposing flood-risk query with CycleMemory', progress: 82, color: 'text-cyan-300' },
   { id: 'weather_intelligence', name: 'Weather Intelligence', role: 'Atmospheric sensor fusion', status: 'working', task: 'Fusing IMD + Open-Meteo + ERA5 feeds', progress: 91, color: 'text-sky-300' },
   { id: 'prediction', name: 'Prediction Agent', role: 'Hazard ML inference', status: 'working', task: 'Scoring cloudburst and flood risk (XGBoost)', progress: 78, color: 'text-violet-300' },
@@ -80,12 +77,12 @@ const INITIAL_AGENTS: Agent[] = [
 ]
 
 const INITIAL_EVENTS: ActivityEvent[] = [
-  { time: 'now', agent: 'Trip Advisory', message: 'Route calculated: Mandi ➔ Manali via NH-21. Cost: ₹1,050 fuel/toll, ₹2,300 taxi. Status: CAUTION.', kind: 'decision' },
-  { time: '6s ago', agent: 'Orchestrator', message: 'Cycle initialized with CycleMemory across all 15 active agents.', kind: 'decision' },
+  { time: 'now', agent: 'Weather Intelligence', message: 'Atmospheric telemetry fused: IMD + Open-Meteo feeds nominal for Mandi, Kullu, Chamba.', kind: 'decision' },
+  { time: '6s ago', agent: 'Orchestrator', message: 'Cycle initialized with CycleMemory across active agents.', kind: 'decision' },
   { time: '14s ago', agent: 'Model Health', message: 'Rolling RMSE verified at 3.65 (drift within 4.2% nominal limit).', kind: 'success' },
   { time: '22s ago', agent: 'Ensemble Fusion', message: 'Combined XGBoost + LightGBM + LSTM: confidence 91.0%, uncertainty spread ±4.2mm.', kind: 'tool' },
   { time: '35s ago', agent: 'Weather Intelligence', message: 'fetch_open_meteo returned 92 mm expected rainfall with 88% probability.', kind: 'tool' },
-  { time: '48s ago', agent: 'System', message: 'All 15 agents registered and reporting healthy to central manager.', kind: 'success' },
+  { time: '48s ago', agent: 'System', message: 'All registered agents online and reporting healthy to central manager.', kind: 'success' },
 ]
 
 const STATUS_META: Record<AgentStatus, { label: string; icon: typeof Activity; className: string }> = {
@@ -106,18 +103,11 @@ export function AgentControlRoom() {
   const [prompts, setPrompts] = useState<Record<string, PromptSpecification>>({})
   const [events, setEvents] = useState(INITIAL_EVENTS)
   const [running, setRunning] = useState(true)
-  const [selectedAgent, setSelectedAgent] = useState('trip_advisory')
-  const [query, setQuery] = useState('Can I travel from Mandi to Manali tomorrow? What will it cost and which way is safe?')
+  const [selectedAgent, setSelectedAgent] = useState('weather_intelligence')
+  const [query, setQuery] = useState('What is the current multi-hazard risk and rainfall forecast for Mandi and Kullu?')
 
   // Active Tab for Inspector Card
   const [inspectorTab, setInspectorTab] = useState<'report' | 'prompt' | 'actions' | 'raw'>('report')
-
-  // Trip Agent Interactive State
-  const [tripSource, setTripSource] = useState('Mandi')
-  const [tripDest, setTripDest] = useState('Manali')
-  const [tripMode, setTripMode] = useState('car')
-  const [tripLoading, setTripLoading] = useState(false)
-  const [tripResult, setTripResult] = useState<TripPlanResponse | null>(null)
 
   // Live Agent Test Execution
   const [agentRunning, setAgentRunning] = useState(false)
@@ -154,13 +144,20 @@ export function AgentControlRoom() {
       } catch {
         if (!cancelled) {
           setBackendHealth('offline')
+          setAgents((current) =>
+            current.map((agent) => ({
+              ...agent,
+              status: 'standby',
+              task: 'Standby: backend offline (start FastAPI on :8000 for live telemetry)',
+            }))
+          )
         }
       }
     }
 
     void syncHealth()
     const healthTimer = window.setInterval(() => void syncHealth(), 15000)
-    const timer = running
+    const timer = (running && backendHealth === 'live')
       ? window.setInterval(() => {
           setAgents((current) =>
             current.map((agent) => {
@@ -188,112 +185,6 @@ export function AgentControlRoom() {
     () => prompts[selectedAgent] || null,
     [prompts, selectedAgent],
   )
-
-  // Handle Trip Planning directly
-  async function handlePlanTrip() {
-    setTripLoading(true)
-    try {
-      const data = await planTripRoute({
-        source: tripSource,
-        destination: tripDest,
-        travel_mode: tripMode,
-      })
-      setTripResult(data)
-      setLiveAgentReport(data.agent_report)
-      setEvents((current) => [
-        {
-          time: currentTime(),
-          agent: 'Trip Advisory',
-          message: `Mountain route evaluated: ${tripSource} ➔ ${tripDest} (${data.result_summary.distance_km} km, ${data.result_summary.duration}). Status: ${data.result_summary.hazard_level}.`,
-          kind: 'decision',
-        },
-        ...current,
-      ])
-    } catch {
-      // Fallback local calculation
-      const fallbackCost = {
-        fuel_cost_inr: 980,
-        fuel_liters_estimated: 10.2,
-        toll_charges_inr: 85,
-        total_self_drive_inr: 1065,
-        taxi_estimate_inr: 2350,
-        bus_fare_inr: 225,
-        cost_summary_range: '₹225 (HRTC Bus) | ₹1,065 (Private Car) | ₹2,350 (Taxi Cab)',
-      }
-      const mockResult: TripPlanResponse = {
-        agent: 'trip_advisory',
-        status: 'COMPLETED',
-        duration_seconds: 0.24,
-        result_summary: {
-          source: tripSource,
-          destination: tripDest,
-          way: `NH-21 corridor connecting ${tripSource} to ${tripDest} via Aut Tunnel`,
-          distance_km: 108.0,
-          duration: '3h 30m',
-          cost: fallbackCost,
-          hazard_level: 'CAUTION',
-        },
-        agent_report: {
-          agent_name: 'trip_advisory',
-          agent_role: 'Mountain Route Safety & Trip Planning Agent',
-          execution_id: 'TRIP-DEMO-001',
-          timestamp: new Date().toISOString(),
-          duration_ms: 240,
-          status: 'COMPLETED',
-          task_assigned: { source: tripSource, destination: tripDest, travel_mode: tripMode },
-          actions_taken: [
-            `Parsed travel request: Origin='${tripSource}', Destination='${tripDest}', Mode='${tripMode}'`,
-            `Resolved primary corridor 'NH-21 via Pandoh Bypass and Aut Tunnel' from Himachal Pradesh highway topology`,
-            `Computed driving distance (108 km) and hill winding duration (3h 30m)`,
-            `Calculated itemized expenditures: Fuel=₹980, Tolls=₹85, Taxi=₹2,350, Bus=₹225`,
-            `Scanned active landslide vulnerability near 6-Mile and Hanogi Temple; marked status as CAUTION`,
-            `Compiled official HPSDMA disaster travel advisories and emergency helpline contacts (1033 / 1070)`,
-          ],
-          final_answer: {
-            source: tripSource,
-            destination: tripDest,
-            way: 'NH-21 via Pandoh Bypass and Aut Tunnel (108 km)',
-            distance_km: 108.0,
-            estimated_duration: '3h 30m',
-            estimated_cost: fallbackCost,
-            route_hazard_level: 'CAUTION',
-            hazard_breakdown: [
-              { location: '6-Mile to 9-Mile stretch', hazard_type: 'landslide', severity: 'MODERATE', notes: 'Active slope cutting; loose stones' },
-              { location: 'Hanogi Temple Beas Bank', hazard_type: 'river_surge', severity: 'MODERATE', notes: 'High river runoff caution' },
-            ],
-            alternative_ways: [
-              { way: 'Via Kamand (IIT Mandi) - Kataula - Bajaura bypass', distance_km: 114, estimated_duration: '4h 10m', hazard_level: 'SAFE', notes: 'Secondary pass bypassing main highway bottlenecks' }
-            ],
-            travel_advisories: [
-              'Recommended travel window: 07:00 to 15:30. Avoid night driving near cliff gorges.',
-              'Emergency National Highway Assistance: Call NHAI 1033 or Disaster Helpline 1070/1077.',
-            ],
-          },
-          summary_markdown: `### 🏔️ Route Advisory: ${tripSource} ➔ ${tripDest}\n- Primary Way: NH-21 Corridor\n- Distance: 108 km (~3h 30m)\n- Safety Status: CAUTION\n- Self-Drive Cost: ₹1,065`,
-        },
-        final_answer: {
-          source: tripSource,
-          destination: tripDest,
-          way: 'NH-21 via Pandoh Bypass and Aut Tunnel (108 km)',
-          distance_km: 108.0,
-          estimated_duration: '3h 30m',
-          estimated_cost: fallbackCost,
-          route_hazard_level: 'CAUTION',
-          hazard_breakdown: [
-            { location: '6-Mile to 9-Mile stretch', hazard_type: 'landslide', severity: 'MODERATE', notes: 'Active slope cutting' },
-          ],
-          alternative_ways: [
-            { way: 'Via Kamand - Kataula - Bajaura', distance_km: 114, estimated_duration: '4h 10m', hazard_level: 'SAFE', notes: 'Bypass route' }
-          ],
-          travel_advisories: ['Travel during daylight hours; verify clearance with Mandi Police 01905-222470'],
-        },
-      }
-      setTripResult(mockResult)
-      setLiveAgentReport(mockResult.agent_report)
-    } finally {
-      setTripLoading(false)
-    }
-  }
 
   // Handle Running Any Agent Live
   async function handleRunSelectedAgent() {
@@ -374,8 +265,7 @@ export function AgentControlRoom() {
             </div>
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1"><ShieldCheck className="size-3.5 text-emerald-300" /> 15 Agents</span>
-            <span className="flex items-center gap-1"><Compass className="size-3.5 text-amber-400" /> Route Guardian</span>
+            <span className="flex items-center gap-1"><ShieldCheck className="size-3.5 text-emerald-300" /> {agents.length} Agents Online</span>
             <button type="button" onClick={() => setRunning((value) => !value)} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-foreground hover:bg-secondary">
               {running ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
               {running ? 'Pause stream' : 'Resume stream'}
@@ -384,195 +274,16 @@ export function AgentControlRoom() {
         </div>
       </GlassCard>
 
-      {/* ── INTERACTIVE TRIP & MOUNTAIN ROUTE SAFETY PLANNER ─────────────────── */}
-      <GlassCard className="overflow-hidden border-amber-500/20 p-5 bg-gradient-to-br from-amber-500/5 via-background/40 to-primary/5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between border-b border-border/70 pb-4">
-          <div className="flex items-center gap-3">
-            <span className="flex size-9 items-center justify-center rounded-xl bg-amber-500/15 text-amber-400">
-              <Navigation className="size-5" />
-            </span>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-semibold text-foreground">Trip & Mountain Route Hazard Advisory Agent</h3>
-                <span className="rounded-full bg-amber-400/10 px-2 py-0.5 text-[10px] font-mono text-amber-300">AGENT 15 · VARUNA ROUTE GUARDIAN</span>
-              </div>
-              <p className="text-xs text-muted-foreground">Evaluates source ➔ destination, calculates road distance, driving duration, itemized costs, and road hazard hotspots.</p>
-            </div>
-          </div>
-          <span className="text-[10px] font-mono text-muted-foreground">MANDI · KULLU · MANALI · SHIMLA · CHAMBA</span>
-        </div>
-
-        {/* Input Form */}
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div>
-            <label className="text-[11px] font-medium text-muted-foreground flex items-center gap-1 mb-1">
-              <MapPin className="size-3 text-emerald-400" /> Origin (Source)
-            </label>
-            <input
-              value={tripSource}
-              onChange={(e) => setTripSource(e.target.value)}
-              placeholder="e.g. Mandi"
-              className="w-full rounded-lg border border-input bg-background/70 px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-amber-400"
-            />
-          </div>
-
-          <div>
-            <label className="text-[11px] font-medium text-muted-foreground flex items-center gap-1 mb-1">
-              <MapPin className="size-3 text-rose-400" /> Destination
-            </label>
-            <input
-              value={tripDest}
-              onChange={(e) => setTripDest(e.target.value)}
-              placeholder="e.g. Manali, Kullu"
-              className="w-full rounded-lg border border-input bg-background/70 px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-amber-400"
-            />
-          </div>
-
-          <div>
-            <label className="text-[11px] font-medium text-muted-foreground flex items-center gap-1 mb-1">
-              <Compass className="size-3 text-primary" /> Travel Mode
-            </label>
-            <select
-              value={tripMode}
-              onChange={(e) => setTripMode(e.target.value)}
-              className="w-full rounded-lg border border-input bg-background/70 px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-amber-400"
-            >
-              <option value="car">Private Car (Self-Drive)</option>
-              <option value="taxi">Taxi / Commercial Cab</option>
-              <option value="bus">HRTC Public Transit Bus</option>
-            </select>
-          </div>
-
-          <div className="flex items-end">
-            <button
-              type="button"
-              disabled={tripLoading}
-              onClick={handlePlanTrip}
-              className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-amber-500/90 hover:bg-amber-500 px-4 py-2 text-sm font-semibold text-slate-950 transition-all shadow-md hover:shadow-amber-500/20 disabled:opacity-50"
-            >
-              <RefreshCw className={cn('size-4', tripLoading && 'animate-spin')} />
-              {tripLoading ? 'Evaluating corridor...' : 'Plan Safe Route & Cost'}
-            </button>
-          </div>
-        </div>
-
-        {/* Output Result Presentation */}
-        {tripResult && (
-          <div className="mt-5 rounded-xl border border-border/80 bg-background/60 p-4 transition-all">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-3">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-foreground text-sm flex items-center gap-1.5">
-                  <span className="text-emerald-400">{tripResult.result_summary.source}</span>
-                  <ArrowRight className="size-3.5 text-muted-foreground" />
-                  <span className="text-primary">{tripResult.result_summary.destination}</span>
-                </span>
-                <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-mono font-medium">
-                  {tripResult.result_summary.distance_km} km · ~{tripResult.result_summary.duration}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] text-muted-foreground">Route Hazard Level:</span>
-                <span className={cn(
-                  'rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider',
-                  tripResult.result_summary.hazard_level === 'SAFE' ? 'bg-emerald-400/10 text-emerald-400 border border-emerald-400/20' :
-                  tripResult.result_summary.hazard_level === 'CAUTION' ? 'bg-amber-400/10 text-amber-300 border border-amber-400/20' :
-                  'bg-rose-400/10 text-rose-300 border border-rose-400/20'
-                )}>
-                  {tripResult.result_summary.hazard_level}
-                </span>
-              </div>
-            </div>
-
-            {/* Corridor Way & Cost Breakdown */}
-            <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
-              {/* Way */}
-              <div className="rounded-lg border border-border/60 bg-secondary/30 p-3.5">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1">
-                  <Navigation className="size-3 text-primary" /> Recommended Way / Corridor
-                </p>
-                <p className="mt-2 text-xs font-medium text-foreground leading-relaxed">
-                  {tripResult.result_summary.way}
-                </p>
-                {tripResult.final_answer.alternative_ways?.[0] && (
-                  <div className="mt-3 pt-2.5 border-t border-border/50 text-[11px] text-muted-foreground">
-                    <span className="font-semibold text-foreground">Alternative Bypass: </span>
-                    {tripResult.final_answer.alternative_ways[0].way} ({tripResult.final_answer.alternative_ways[0].distance_km} km, ~{tripResult.final_answer.alternative_ways[0].estimated_duration})
-                  </div>
-                )}
-              </div>
-
-              {/* Itemized Costs */}
-              <div className="rounded-lg border border-border/60 bg-secondary/30 p-3.5">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1">
-                  <Coins className="size-3 text-amber-400" /> Estimated Itemized Costs
-                </p>
-                <div className="mt-2.5 flex flex-col gap-1.5 text-xs">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Private Car (Fuel + Toll):</span>
-                    <span className="font-mono font-semibold text-foreground">₹{tripResult.result_summary.cost.total_self_drive_inr}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Fuel Consumption:</span>
-                    <span className="font-mono text-muted-foreground">~{tripResult.result_summary.cost.fuel_liters_estimated} L (hill gradient)</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Himachal Taxi Tariff:</span>
-                    <span className="font-mono font-semibold text-foreground">₹{tripResult.result_summary.cost.taxi_estimate_inr}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">HRTC Bus Fare:</span>
-                    <span className="font-mono font-semibold text-emerald-400">₹{tripResult.result_summary.cost.bus_fare_inr}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Hazard Hotspots & Advisories */}
-              <div className="rounded-lg border border-border/60 bg-secondary/30 p-3.5">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1">
-                  <ShieldAlert className="size-3 text-rose-400" /> Route Hazards & Advisories
-                </p>
-                <div className="mt-2 flex flex-col gap-1.5 text-[11px] text-muted-foreground">
-                  {tripResult.final_answer.hazard_breakdown?.map((h, i) => (
-                    <div key={i} className="flex items-start gap-1.5">
-                      <span className="text-amber-400 font-bold">•</span>
-                      <span><strong className="text-foreground">{h.location}:</strong> {h.notes}</span>
-                    </div>
-                  ))}
-                  <div className="mt-1 pt-1.5 border-t border-border/50 text-[10px] text-cyan-300">
-                    📞 Helpline: NHAI 1033 | HPSDMA 1070 | Police 112
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Actions Taken Audit Log */}
-            <div className="mt-4 pt-3 border-t border-border/60">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1">
-                <CheckCircle2 className="size-3 text-emerald-400" /> What the Trip Agent Did (Actions Taken Audit)
-              </p>
-              <div className="flex flex-col gap-1 text-[11px] text-muted-foreground font-mono bg-background/50 rounded-lg p-2.5 border border-border/40">
-                {tripResult.agent_report.actions_taken.map((action, idx) => (
-                  <div key={idx} className="flex items-start gap-2">
-                    <span className="text-primary font-bold">{idx + 1}.</span>
-                    <span>{action}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-      </GlassCard>
-
       {/* ── AGENT TOPOLOGY & PER-AGENT REPORT INSPECTOR ───────────────────────── */}
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-        {/* Left Column: 15 Agents Topology Grid */}
+        {/* Left Column: Agents Topology Grid */}
         <GlassCard className="overflow-hidden">
           <div className="flex items-center justify-between border-b border-border px-5 py-4">
             <div>
               <h2 className="text-sm font-semibold">Agent Topology & Status</h2>
               <p className="mt-1 text-xs text-muted-foreground">Select any agent to inspect its exact system prompt, execution log, and structured answer.</p>
             </div>
-            <span className="text-[10px] font-mono text-muted-foreground">15 REGISTERED AGENTS</span>
+            <span className="text-[10px] font-mono text-muted-foreground">{agents.length} REGISTERED AGENTS</span>
           </div>
 
           <div className="grid gap-2.5 p-4 sm:grid-cols-2 max-h-[620px] overflow-y-auto">

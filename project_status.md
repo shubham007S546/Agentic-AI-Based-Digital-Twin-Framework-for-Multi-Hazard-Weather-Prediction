@@ -14,7 +14,7 @@
 | 🤖 ML Training | XGBoost tuned (`train_xgboost_tuned.py`) | ✅ Done |
 | 📈 Benchmarking | `training/benchmark.py`, `evaluate.py` | ✅ Done |
 | 🧠 ML Module | `machine_learning_module/` | ✅ Done |
-| 🔮 Deep Learning | LSTM/GRU/TCN models | 🔄 60% |
+| 🔮 Deep Learning | LSTM/GRU/TCN/TFT models | ✅ Done |
 | 🌐 Backend (FastAPI) | Full API with auth, agents, prediction, reports | ✅ Done |
 | 💻 Frontend (Next.js) | 28 pages: dashboard, alerts, map, digital twin, XAI, etc. | ✅ Done |
 | 🤖 Agentic AI | Weather, Prediction, Alert, Report, Digital Twin agents | ✅ Done |
@@ -27,9 +27,9 @@
 
 - ERA5 / ERA5-Land collectors (auth issues with CDS API)
 - Infrastructure data collector
-- Deep learning model benchmark exports (~60% complete)
+- Deep learning model benchmark exports: ✅ Completed (LSTM/GRU/TCN/TFT verified with regression metrics & Taylor plots)
 - ReliefWeb API integration (waiting for approval)
-- Trained ML model files not present in `backend/ml_models/` yet (only metrics JSON exists)
+- Trained ML model files: ✅ Generated and synced to `backend/ml_models/` (XGBoost Regression, Rain Intensity, Landslide Risk, and baseline models)
 
 ---
 

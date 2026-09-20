@@ -65,7 +65,7 @@ foreach ($a in $agents) {
         foreach ($kv in $ev.GetEnumerator()) {
             [System.Environment]::SetEnvironmentVariable($kv.Key, $kv.Value, 'Process')
         }
-        & uvicorn $mod --host 0.0.0.0 --port $p 2>&1
+        python -m uvicorn $mod --host 0.0.0.0 --port $p 2>&1
     } -ArgumentList $workDir, $module, $port, $envVars
 
     $jobs += $job

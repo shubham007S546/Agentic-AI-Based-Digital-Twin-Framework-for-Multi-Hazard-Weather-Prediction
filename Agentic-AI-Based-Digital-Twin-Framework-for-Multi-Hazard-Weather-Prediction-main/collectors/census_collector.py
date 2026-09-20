@@ -72,8 +72,8 @@ except ImportError:  # pragma: no cover - tqdm is a soft dependency
 # Constants & defaults
 # --------------------------------------------------------------------------- #
 
-DEFAULT_BASE_DIR = "datasets/digital_twin/population/Census"
-DEFAULT_BOUNDARIES_DIR = "datasets/digital_twin/metadata/boundaries"
+DEFAULT_BASE_DIR = "digital_twin/population/Census"
+DEFAULT_BOUNDARIES_DIR = "digital_twin/metadata/boundaries"
 DEFAULT_FILE_TYPES = (".xls", ".xlsx", ".csv", ".pdf", ".zip")
 DEFAULT_KEYWORDS = ("census", "dchb", "village", "district", "population", "2011")
 DEFAULT_TIMEOUT = 30

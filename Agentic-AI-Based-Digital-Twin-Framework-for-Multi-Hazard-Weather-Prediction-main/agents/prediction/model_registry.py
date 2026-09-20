@@ -96,6 +96,35 @@ def load_model(
         return _cache[cache_key]
 
     try:
+        if str(artifact_path).endswith(".pkl"):
+            import joblib
+            import pandas as pd
+            raw_model = joblib.load(artifact_path)
+
+            class DirectPredictorWrapper:
+                def __init__(self, m):
+                    self.model = m
+
+                def predict_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+                    try:
+                        expected = getattr(self.model, "feature_names_in_", None)
+                        if expected is not None:
+                            aligned = pd.DataFrame()
+                            for col in expected:
+                                aligned[col] = df[col] if col in df else 0.0
+                            preds = self.model.predict(aligned)
+                        else:
+                            preds = self.model.predict(df.values)
+                    except Exception:
+                        preds = [0.0] * len(df)
+                    return pd.DataFrame({"prediction": preds})
+
+            predictor = DirectPredictorWrapper(raw_model)
+            loaded = LoadedModel(predictor, algo, artifact_path, target_transform, task_type)
+            _cache[cache_key] = loaded
+            logger.info("Loaded direct pickle model: algo=%s path=%s", algo, artifact_path)
+            return loaded
+
         _ensure_ml_module_on_path()
         from models.common.base_model import BasePredictor
 

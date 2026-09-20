@@ -44,21 +44,60 @@ def _load_dotenv_if_present() -> None:
 _load_dotenv_if_present()
 
 
+def _find_default_rainfall_model() -> str:
+    env_path = os.getenv("RAINFALL_MODEL_PATH", "")
+    if env_path and os.path.exists(env_path):
+        return env_path
+    from pathlib import Path
+    for candidate in [
+        Path(__file__).resolve().parents[2] / "backend" / "ml_models" / "rainfall_xgboost.pkl",
+        Path(__file__).resolve().parents[2] / "backend" / "ml_models" / "rainfall_lightgbm.pkl",
+    ]:
+        if candidate.exists():
+            return str(candidate)
+    return ""
+
+
+def _find_default_landslide_model() -> str:
+    env_path = os.getenv("LANDSLIDE_MODEL_PATH", "")
+    if env_path and os.path.exists(env_path):
+        return env_path
+    from pathlib import Path
+    for candidate in [
+        Path(__file__).resolve().parents[2] / "backend" / "ml_models" / "xgboost_landslide_risk.pkl",
+        Path(__file__).resolve().parents[2] / "ml_ready" / "models" / "xgboost_landslide_risk.pkl",
+    ]:
+        if candidate.exists():
+            return str(candidate)
+    return ""
+
+
+def _find_default_scaler_params() -> str:
+    env_path = os.getenv("SCALER_PARAMS_PATH", "")
+    if env_path and os.path.exists(env_path):
+        return env_path
+    from pathlib import Path
+    candidate = Path(__file__).resolve().parents[2] / "ml_ready" / "scaler_params.csv"
+    if candidate.exists():
+        return str(candidate)
+    return ""
+
+
 @dataclass
 class Settings:
     ml_module_path: str = os.getenv("ML_MODULE_PATH", "../../machine_learning_module")
 
-    rainfall_model_path: str = os.getenv("RAINFALL_MODEL_PATH", "")
-    rainfall_model_algo: str = os.getenv("RAINFALL_MODEL_ALGO", "lightgbm")
-    rainfall_target_transform: str = os.getenv("RAINFALL_TARGET_TRANSFORM", "log1p")
+    rainfall_model_path: str = _find_default_rainfall_model()
+    rainfall_model_algo: str = os.getenv("RAINFALL_MODEL_ALGO", "xgboost")
+    rainfall_target_transform: str = os.getenv("RAINFALL_TARGET_TRANSFORM", "none")
 
     cloudburst_model_path: str = os.getenv("CLOUDBURST_MODEL_PATH", "")
     cloudburst_model_algo: str = os.getenv("CLOUDBURST_MODEL_ALGO", "xgboost")
 
-    landslide_model_path: str = os.getenv("LANDSLIDE_MODEL_PATH", "")
+    landslide_model_path: str = _find_default_landslide_model()
     landslide_model_algo: str = os.getenv("LANDSLIDE_MODEL_ALGO", "xgboost")
 
-    scaler_params_path: str = os.getenv("SCALER_PARAMS_PATH", "")
+    scaler_params_path: str = _find_default_scaler_params()
 
     cloudburst_threshold_mm: float = float(os.getenv("CLOUDBURST_THRESHOLD_MM", "100.0"))
 

@@ -36,7 +36,7 @@ class Settings:
     # Sibling agents this one calls out to for real data (see clients.py).
     prediction_agent_url: str = os.getenv("PREDICTION_AGENT_URL", "http://localhost:8002")
     weather_agent_url: str = os.getenv("WEATHER_AGENT_URL", "http://localhost:8001")
-    agent_request_timeout_seconds: float = float(os.getenv("AGENT_REQUEST_TIMEOUT_SECONDS", "20"))
+    agent_request_timeout_seconds: float = float(os.getenv("AGENT_REQUEST_TIMEOUT_SECONDS", "3.0"))
 
     # ReliefWeb is a real, public, keyless-enough API (just needs an "appname"
     # string identifying your app, not a secret) -- see external_feeds.py.

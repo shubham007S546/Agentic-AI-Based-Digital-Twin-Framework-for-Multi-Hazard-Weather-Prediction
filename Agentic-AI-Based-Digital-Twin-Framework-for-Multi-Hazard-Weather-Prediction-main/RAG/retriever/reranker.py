@@ -11,7 +11,10 @@ def _get_page_content(doc):
 class Reranker:
 
     def __init__(self, model_name="cross-encoder/ms-marco-MiniLM-L-6-v2"):
-        self.model = CrossEncoder(model_name)
+        try:
+            self.model = CrossEncoder(model_name)
+        except Exception:
+            self.model = None
 
     def rerank(self, query, candidates, top_k=4):
         """
@@ -21,11 +24,17 @@ class Reranker:
         if not candidates:
             return []
 
-        pairs = [(query, _get_page_content(c["document"])) for c in candidates]
-        scores = self.model.predict(pairs)
+        if self.model is None:
+            return candidates[:top_k]
 
-        for c, s in zip(candidates, scores):
-            c["rerank_score"] = float(s)
+        try:
+            pairs = [(query, _get_page_content(c["document"])) for c in candidates]
+            scores = self.model.predict(pairs)
 
-        reranked = sorted(candidates, key=lambda c: c["rerank_score"], reverse=True)
-        return reranked[:top_k]
+            for c, s in zip(candidates, scores):
+                c["rerank_score"] = float(s)
+
+            reranked = sorted(candidates, key=lambda c: c.get("rerank_score", 0), reverse=True)
+            return reranked[:top_k]
+        except Exception:
+            return candidates[:top_k]

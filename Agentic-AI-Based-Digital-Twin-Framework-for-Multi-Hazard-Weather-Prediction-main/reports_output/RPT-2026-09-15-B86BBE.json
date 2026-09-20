@@ -1,0 +1,40 @@
+{
+  "metadata": {
+    "report_id": "RPT-2026-09-15-B86BBE",
+    "report_type": "multi_hazard",
+    "format": "json",
+    "version": 11,
+    "generated_at": "2026-09-15T04:19:47.362278+00:00",
+    "districts": [
+      "Mandi"
+    ],
+    "data_sources_used": [],
+    "data_completeness": 0.0
+  },
+  "sections": [
+    {
+      "title": "Summary",
+      "kind": "text",
+      "content": "**Executive Summary \u2013 Mandi District, Himachal Pradesh**\n\nThe latest multi\u2011hazard assessment for Mandi reveals a stable weather and hazard profile, with no significant anomalies identified in the available data. No extreme events\u2014such as severe storms, floods, landslides, or temperature extremes\u2014were recorded during the monitoring period. Consequently, the district\u2019s overall risk level remains low, and no heightened preparedness actions are required at this time."
+    },
+    {
+      "title": "Key Insights",
+      "kind": "text",
+      "content": "- No significant anomalies, extreme events, or elevated risk detected in available data."
+    },
+    {
+      "title": "District Metrics",
+      "kind": "table",
+      "content": [
+        {
+          "District": "Mandi",
+          "Temp (C)": null,
+          "Humidity (%)": null,
+          "Predicted Rainfall (mm)": null,
+          "Digital Twin Risk": null,
+          "Landslide Score": null
+        }
+      ]
+    }
+  ]
+}

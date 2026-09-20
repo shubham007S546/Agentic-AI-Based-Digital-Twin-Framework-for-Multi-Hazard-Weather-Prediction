@@ -45,7 +45,9 @@ def open_meteo_provider(params: Dict[str, Any]) -> Dict[str, Any]:
     forecast_hours = params.get("forecast_hours", 24)
 
     if latitude is None or longitude is None:
-        return {"status": "error", "source": "open_meteo", "note": "latitude/longitude required."}
+        logger.warning("open_meteo_provider: latitude/longitude missing, defaulting to Mandi (31.5892, 76.9182)")
+        latitude = 31.5892
+        longitude = 76.9182
 
     query = {
         "latitude": latitude,

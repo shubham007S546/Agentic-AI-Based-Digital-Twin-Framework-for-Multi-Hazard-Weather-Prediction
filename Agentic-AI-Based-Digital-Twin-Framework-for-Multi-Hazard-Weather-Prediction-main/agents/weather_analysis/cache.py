@@ -37,22 +37,37 @@ class _InMemoryTTLCache:
 class _RedisCache:
     def __init__(self, url: str):
         import redis
-        self._client = redis.Redis.from_url(url, decode_responses=True)
         self._fallback = _InMemoryTTLCache()
+        self._available = False
+        try:
+            self._client = redis.Redis.from_url(
+                url, decode_responses=True, socket_connect_timeout=0.4, socket_timeout=0.4
+            )
+            self._client.ping()
+            self._available = True
+        except Exception as exc:
+            logger.info("Redis not reachable (%s); falling back to in-memory cache", exc)
 
     def get(self, key: str) -> Optional[dict]:
+        if not self._available:
+            return self._fallback.get(key)
         try:
             raw = self._client.get(key)
             return json.loads(raw) if raw else None
         except Exception as exc:
             logger.debug("Redis read failed (%s); using in-memory cache", exc)
+            self._available = False
             return self._fallback.get(key)
 
     def set(self, key: str, value: dict, ttl_seconds: int) -> None:
+        if not self._available:
+            self._fallback.set(key, value, ttl_seconds)
+            return
         try:
             self._client.set(key, json.dumps(value), ex=ttl_seconds)
         except Exception as exc:
             logger.debug("Redis write failed (%s); using in-memory cache", exc)
+            self._available = False
             self._fallback.set(key, value, ttl_seconds)
 
 

@@ -628,7 +628,8 @@ def fix_lag_nans(df: pd.DataFrame) -> pd.DataFrame:
     """
     _header("STEP 8 -- Fix Lag NaN Edge Values")
     fixed = False
-    for col in ["precip_lag_1h", "precip_lag_3h", "precip_lag_6h"]:
+    lag_cols = [c for c in df.columns if c.startswith("precip_lag_")]
+    for col in lag_cols:
         if col in df.columns:
             n = df[col].isna().sum()
             if n > 0:

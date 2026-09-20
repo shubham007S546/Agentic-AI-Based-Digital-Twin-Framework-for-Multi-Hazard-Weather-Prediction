@@ -21,9 +21,13 @@ class AlertStore:
         if settings.has_redis:
             try:
                 import redis
-                self._redis = redis.Redis.from_url(settings.redis_url, decode_responses=True)
+                client = redis.Redis.from_url(
+                    settings.redis_url, decode_responses=True, socket_connect_timeout=0.4, socket_timeout=0.4
+                )
+                client.ping()
+                self._redis = client
             except Exception as exc:
-                logger.warning("Redis unavailable (%s); alerts will only be logged to file.", exc)
+                logger.info("Redis unavailable (%s); alerts will only be logged to file.", exc)
 
     def append(self, alert: Dict[str, Any]) -> None:
         os.makedirs(os.path.dirname(settings.alert_log_path) or ".", exist_ok=True)

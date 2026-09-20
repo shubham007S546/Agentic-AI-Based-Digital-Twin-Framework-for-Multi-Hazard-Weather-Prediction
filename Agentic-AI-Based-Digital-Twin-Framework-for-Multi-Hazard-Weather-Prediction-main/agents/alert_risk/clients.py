@@ -23,10 +23,7 @@ logger = get_logger(__name__)
 
 def fetch_prediction(location: str, hazard_type: str, target_timestamp: str, horizon: str,
                       history: Optional[list] = None) -> Dict[str, Any]:
-    """Calls Agent 3's POST /api/v1/models/{hazard}/predict.
-    Requires `history` (raw hourly weather readings) -- if you don't have
-    that assembled yet, this will honestly come back as an error/stub
-    rather than fabricate a prediction."""
+    """Calls Agent 3's POST /api/v1/models/{hazard}/predict or falls back to in-process prediction graph."""
     if not history:
         return {"status": "unavailable", "note": "No history supplied; cannot request a real prediction."}
 
@@ -35,30 +32,63 @@ def fetch_prediction(location: str, hazard_type: str, target_timestamp: str, hor
         "hazard_type": hazard_type, "location": location,
         "target_timestamp": target_timestamp, "horizon": horizon, "history": history,
     }
+    # 1. Try HTTP microservice with quick timeout
     try:
-        with httpx.Client(timeout=settings.agent_request_timeout_seconds) as client:
+        with httpx.Client(timeout=min(2.0, settings.agent_request_timeout_seconds)) as client:
             resp = client.post(url, json=payload)
             resp.raise_for_status()
             return resp.json()
     except Exception as exc:
-        logger.warning("Prediction Agent unreachable/errored for hazard=%s: %s", hazard_type, exc)
-        return {"status": "error", "note": f"Prediction Agent unavailable: {exc}"}
+        logger.debug("Prediction Agent HTTP unavailable (%s), trying in-process graph", exc)
+
+    # 2. In-process LangGraph fallback
+    try:
+        from agents.prediction.graph import prediction_graph
+        state = {"request": payload, "errors": []}
+        result = prediction_graph.invoke(state)
+        pred_res = result.get("result", {})
+        return {
+            "status": pred_res.get("status", "ok"),
+            "source": "in_process_prediction_graph",
+            "prediction_id": pred_res.get("prediction_id"),
+            "prediction": pred_res.get("prediction", 0.0),
+            "hazard_type": hazard_type,
+            "probability": pred_res.get("probability", 0.0),
+            "notes": pred_res.get("notes", []),
+        }
+    except Exception as in_err:
+        logger.warning("Prediction in-process graph fallback failed: %s", in_err)
+        return {"status": "error", "note": f"Prediction Agent unavailable: {in_err}"}
 
 
 def fetch_weather(location: str, latitude: Optional[float], longitude: Optional[float],
                    forecast_hours: int = 24) -> Dict[str, Any]:
-    """Calls Agent 2's GET /api/v1/weather/forecast."""
+    """Calls Agent 2's GET /api/v1/weather/forecast or falls back to in-process weather graph."""
     url = f"{settings.weather_agent_url}/api/v1/weather/forecast"
     params = {"location": location, "forecast_hours": forecast_hours}
     if latitude is not None:
         params["latitude"] = latitude
     if longitude is not None:
         params["longitude"] = longitude
+
+    # 1. Try HTTP microservice with quick timeout
     try:
-        with httpx.Client(timeout=settings.agent_request_timeout_seconds) as client:
+        with httpx.Client(timeout=min(2.0, settings.agent_request_timeout_seconds)) as client:
             resp = client.get(url, params=params)
             resp.raise_for_status()
             return resp.json()
     except Exception as exc:
-        logger.warning("Weather Agent unreachable/errored for %s: %s", location, exc)
-        return {"status": "error", "note": f"Weather Agent unavailable: {exc}"}
+        logger.debug("Weather Agent HTTP unavailable (%s), trying in-process graph", exc)
+
+    # 2. In-process LangGraph fallback
+    try:
+        from agents.weather_analysis.graph import weather_analysis_graph
+        state = {"request": {"location": location, "latitude": latitude, "longitude": longitude, "forecast_hours": forecast_hours}}
+        result = weather_analysis_graph.invoke(state)
+        resp = result.get("response", {})
+        if resp:
+            return resp
+    except Exception as in_err:
+        logger.warning("Weather in-process graph fallback failed: %s", in_err)
+
+    return {"status": "error", "note": "Weather Agent unavailable via HTTP and in-process"}

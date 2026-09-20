@@ -26,6 +26,17 @@ if "torchvision" not in sys.modules:
     except Exception:
         sys.modules["torchvision"] = None
 
+# Safeguard against local 'datasets' folder shadowing HuggingFace datasets library
+try:
+    import datasets
+    if not hasattr(datasets, "Dataset"):
+        class _MockDataset: pass
+        datasets.Dataset = _MockDataset
+        datasets.DatasetDict = dict
+        datasets.Value = lambda x: x
+except Exception:
+    pass
+
 from retriever.hybrid import HybridRetriever
 from chains.rag_chain import RAGChain
 from utils.singletons import get_faiss_store

@@ -116,26 +116,25 @@ def train_and_evaluate_models(X_train, X_test, y_train, y_test):
     results = {}
     trained_models = {}
     
+    os.makedirs("catboost_info/tmp", exist_ok=True)
     for name, model in models.items():
         logger.info(f"  Training {name}...")
-        model.fit(X_train, y_train)
-        
-        preds = model.predict(X_test)
-        
-        mae = mean_absolute_error(y_test, preds)
-        rmse = np.sqrt(mean_squared_error(y_test, preds))
-        r2 = r2_score(y_test, preds)
-        
-        # Simple MAPE approximation (avoiding division by zero)
-        mape = np.mean(np.abs((y_test - preds) / (y_test + 1e-8))) * 100
-        
-        results[name] = {
-            "mae": float(mae),
-            "rmse": float(rmse),
-            "r2": float(r2),
-            "mape": float(mape)
-        }
-        trained_models[name] = model
+        try:
+            model.fit(X_train, y_train)
+            preds = model.predict(X_test)
+            mae = mean_absolute_error(y_test, preds)
+            rmse = np.sqrt(mean_squared_error(y_test, preds))
+            r2 = r2_score(y_test, preds)
+            mape = np.mean(np.abs((y_test - preds) / (y_test + 1e-8))) * 100
+            results[name] = {
+                "mae": float(mae),
+                "rmse": float(rmse),
+                "r2": float(r2),
+                "mape": float(mape)
+            }
+            trained_models[name] = model
+        except Exception as err:
+            logger.warning(f"  Failed to train {name}: {err}")
         
     return trained_models, results
 

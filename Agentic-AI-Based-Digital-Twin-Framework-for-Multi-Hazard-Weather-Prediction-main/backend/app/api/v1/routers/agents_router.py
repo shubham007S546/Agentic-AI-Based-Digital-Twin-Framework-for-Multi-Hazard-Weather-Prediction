@@ -15,15 +15,16 @@ Endpoints:
 
 from __future__ import annotations
 
+import asyncio
 import os
-from typing import Annotated, Any
+from typing import Annotated, Any, Optional
 
 import httpx
 from fastapi import APIRouter, Depends, Path, status
 from pydantic import BaseModel, Field
 
 from app.core.enums import AgentName, AgentTrigger
-from app.dependencies.auth import CurrentUserToken, require_admin
+from app.dependencies.auth import CurrentUserToken, OptionalCurrentUserToken, require_admin
 from app.schemas.common import ApiResponse
 
 router = APIRouter()
@@ -258,30 +259,45 @@ class AssistantQueryRequest(BaseModel):
     question: str = Field(..., min_length=1, description="Natural language question for the AI assistant")
 
 
+_rag_chain_instance = None
+_rag_chain_lock = asyncio.Lock()
+
+
+async def get_or_create_rag_chain():
+    global _rag_chain_instance
+    if _rag_chain_instance is not None:
+        return _rag_chain_instance
+    async with _rag_chain_lock:
+        if _rag_chain_instance is None:
+            def _init():
+                try:
+                    from RAG.app import load_runtime_dependencies
+                    from RAG.chains.rag_chain import RAGChain
+                except ImportError:
+                    from RAG_project.app import load_runtime_dependencies
+                    from RAG_project.chains.rag_chain import RAGChain
+                retriever = load_runtime_dependencies()
+                return RAGChain(retriever)
+            _rag_chain_instance = await asyncio.to_thread(_init)
+        return _rag_chain_instance
+
+
 @router.post(
     "/assistant/query",
     summary="Ask the AI assistant a question",
 )
 async def query_assistant(
     payload: AssistantQueryRequest,
-    token_data: CurrentUserToken,
+    token_data: OptionalCurrentUserToken = None,
 ) -> ApiResponse[dict]:
     try:
-        from RAG.app import load_runtime_dependencies
-        from RAG.chains.rag_chain import RAGChain
-    except ImportError:
-        from RAG_project.app import load_runtime_dependencies
-        from RAG_project.chains.rag_chain import RAGChain
-
-    try:
-        retriever = load_runtime_dependencies()
-        rag_chain = RAGChain(retriever)
-        result = rag_chain.ask(payload.question)
-    except Exception:
+        chain = await get_or_create_rag_chain()
+        result = await asyncio.to_thread(chain.ask, payload.question)
+    except Exception as exc:
         return ApiResponse(
             success=False,
-            data={"question": payload.question, "answer": "RAG service is temporarily unavailable.", "sources": []},
-            message="RAG query failed. Check the backend and index health logs.",
+            data={"question": payload.question, "answer": f"RAG query error: {str(exc)}", "sources": []},
+            message="RAG query could not be completed at this time.",
         )
 
     return ApiResponse(data=result, message="Assistant response generated")
@@ -304,7 +320,7 @@ class OrchestratorQueryRequest(BaseModel):
 )
 async def orchestrator_query(
     payload: OrchestratorQueryRequest,
-    token_data: CurrentUserToken,
+    token_data: OptionalCurrentUserToken = None,
 ) -> ApiResponse[dict]:
     """
     Proxies the request to the standalone Orchestrator Agent (port 8005).
@@ -317,7 +333,7 @@ async def orchestrator_query(
     """
     upstream = f"{ORCHESTRATOR_URL}/api/v1/orchestrator/query"
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
                 upstream,
                 json={
@@ -331,7 +347,7 @@ async def orchestrator_query(
                 data=resp.json(),
                 message="Orchestrator response received.",
             )
-    except httpx.ConnectError:
+    except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError):
         # Seamless In-Process Fallback via LangGraph Orchestrator
         try:
             from agents.orchestrator.graph import orchestrator_graph
@@ -346,7 +362,7 @@ async def orchestrator_query(
                 "history": history,
                 "errors": [],
             }
-            final_state = orchestrator_graph.invoke(initial_state)
+            final_state = await asyncio.to_thread(orchestrator_graph.invoke, initial_state)
             data = {
                 "session_id": payload.session_id,
                 "response": final_state.get("final_response", ""),

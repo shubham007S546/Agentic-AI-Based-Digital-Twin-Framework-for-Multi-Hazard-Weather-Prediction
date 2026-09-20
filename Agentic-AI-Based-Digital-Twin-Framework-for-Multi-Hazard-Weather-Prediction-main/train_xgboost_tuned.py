@@ -250,6 +250,12 @@ def task1_regression(ml_ready: Path, feature_cols: list[str], recs: dict, n_iter
 
     _print_regression_baselines(X, y_log, X_val, y_val_raw)
 
+    models_dir = ml_ready / "models"
+    models_dir.mkdir(parents=True, exist_ok=True)
+    import joblib
+    joblib.dump(result_model, models_dir / "xgboost_regression.pkl")
+    print(f"  Saved model -> {models_dir / 'xgboost_regression.pkl'}")
+
     return result_model
 
 
@@ -381,6 +387,12 @@ def task2_intensity(ml_ready: Path, feature_cols: list[str], recs: dict, n_iter:
     pred = search.best_estimator_.predict(X_val)
     print(f"  VAL  F1-macro : {f1_score(y_val, pred, average='macro'):.4f}")
 
+    models_dir = ml_ready / "models"
+    models_dir.mkdir(parents=True, exist_ok=True)
+    import joblib
+    joblib.dump(search.best_estimator_, models_dir / "xgboost_rain_intensity_class.pkl")
+    print(f"  Saved model -> {models_dir / 'xgboost_rain_intensity_class.pkl'}")
+
     return search.best_estimator_
 
 
@@ -457,6 +469,10 @@ def task_rare_event(ml_ready: Path, target_col: str, recs: dict, n_iter: int, n_
     print(f"  scale_pos_weight   : {scale_pos_weight}  (re-derived from the BALANCED set, "
           f"not the raw full-train value)")
 
+    if len(X) == 0 or pos == 0:
+        print(f"  No positive training events found for '{target_col}' (pos={pos}). Skipping model fitting.")
+        return None
+
     task_key = "task3_cloudburst_flag" if target_col == "cloudburst_flag" else "task4_landslide_risk"
     space = recs[task_key]["search_space"]
 
@@ -500,16 +516,25 @@ def task_rare_event(ml_ready: Path, target_col: str, recs: dict, n_iter: int, n_
         print(f"  Best params    : {best_params}")
 
     # Evaluate on the REAL, untouched val set -- never the balanced set.
+    y_val_eval = (y_val > 0).astype(int) if target_col == "landslide_risk" else y_val
     proba = best_model.predict_proba(X_val)[:, 1]
     pred = (proba >= 0.5).astype(int)
 
-    print(f"  VAL  positives : {int(y_val.sum())} / {len(y_val)}")
-    print(f"  VAL  F1        : {f1_score(y_val, pred, zero_division=0):.4f}")
-    print(f"  VAL  AUC-PR    : {average_precision_score(y_val, proba):.4f}")
-    if y_val.nunique() > 1:
-        print(f"  VAL  ROC-AUC   : {roc_auc_score(y_val, proba):.4f}")
+    print(f"  VAL  positives : {int(y_val_eval.sum())} / {len(y_val_eval)}")
+    print(f"  VAL  F1        : {f1_score(y_val_eval, pred, zero_division=0):.4f}")
+    print(f"  VAL  AUC-PR    : {average_precision_score(y_val_eval, proba):.4f}")
+    if y_val_eval.nunique() > 1:
+        print(f"  VAL  ROC-AUC   : {roc_auc_score(y_val_eval, proba):.4f}")
     else:
         print(f"  VAL  ROC-AUC   : undefined (only one class present in this val split)")
+
+    # Save model artifact
+    models_dir = ml_ready / "models"
+    models_dir.mkdir(parents=True, exist_ok=True)
+    import joblib
+    model_save_path = models_dir / f"xgboost_{target_col}.pkl"
+    joblib.dump(best_model, model_save_path)
+    print(f"  Saved model -> {model_save_path}")
 
     return best_model
 

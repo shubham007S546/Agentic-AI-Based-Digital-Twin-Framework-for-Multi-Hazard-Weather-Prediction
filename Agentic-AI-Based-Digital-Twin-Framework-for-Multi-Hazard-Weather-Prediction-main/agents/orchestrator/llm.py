@@ -42,28 +42,66 @@ def _extract_json(text: str) -> Optional[dict]:
 class _FallbackLLM:
     """Rule-based stand-in used only when no GROQ_API_KEY is configured."""
 
-    _KEYWORD_TOOLS = {
-        "rain": "prediction_tool", "rainfall": "prediction_tool", "flood": "prediction_tool",
-        "forecast": "weather_tool", "weather": "weather_tool", "temperature": "weather_tool",
-        "alert": "alert_tool", "warning": "alert_tool", "danger": "alert_tool",
-        "landslide": "digital_twin_tool", "hazard": "digital_twin_tool", "simulation": "digital_twin_tool",
-        "data": "data_tool", "dataset": "data_tool", "history": "data_tool",
-        "research": "rag_tool", "paper": "rag_tool", "document": "rag_tool", "guideline": "rag_tool",
-        "notify": "notification_tool", "sms": "notification_tool", "email": "notification_tool",
+    _KEYWORD_MULTI_TOOLS = {
+        "rain": ["weather_tool", "prediction_tool"],
+        "rainfall": ["weather_tool", "prediction_tool"],
+        "flood": ["alert_tool", "digital_twin_tool", "weather_tool"],
+        "landslide": ["alert_tool", "digital_twin_tool"],
+        "cloudburst": ["prediction_tool", "alert_tool", "weather_tool"],
+        "forecast": ["weather_tool"],
+        "weather": ["weather_tool"],
+        "temperature": ["weather_tool"],
+        "alert": ["alert_tool"],
+        "warning": ["alert_tool"],
+        "danger": ["alert_tool"],
+        "simulation": ["digital_twin_tool"],
+        "twin": ["digital_twin_tool"],
+        "travel": ["trip_tool", "weather_tool", "alert_tool"],
+        "route": ["trip_tool", "weather_tool", "alert_tool"],
+        "cost": ["trip_tool"],
+        "manali": ["trip_tool", "weather_tool"],
+        "data": ["data_tool"],
+        "dataset": ["data_tool"],
+        "history": ["data_tool"],
+        "research": ["rag_tool"],
+        "paper": ["rag_tool"],
+        "document": ["rag_tool"],
+        "guideline": ["rag_tool"],
+        "sop": ["rag_tool"],
+        "notify": ["notification_tool"],
+        "sms": ["notification_tool"],
     }
 
     def chat_json(self, system: str, user: str) -> Dict[str, Any]:
         lowered = user.lower()
+        tools_set = set()
+        for kw, tool_list in self._KEYWORD_MULTI_TOOLS.items():
+            if kw in lowered:
+                tools_set.update(tool_list)
+        tools = sorted(tools_set) or ["weather_tool"]
+
         if "intent" in system.lower():
-            tools = sorted({t for kw, t in self._KEYWORD_TOOLS.items() if kw in lowered}) or ["weather_tool"]
+            # Extract basic location if present
+            location = "Mandi"
+            for loc in ["mandi", "kullu", "manali", "chamba", "shimla", "kangra", "solan"]:
+                if loc in lowered:
+                    location = loc.title()
+                    break
             return {
-                "intent": "weather_query",
-                "entities": {"raw_query": user},
+                "intent": "hazard_intelligence_query",
+                "entities": {"location": location, "raw_query": user},
                 "requires_tools": tools,
             }
-        # task planning fallback: one call per required tool, no params inference
-        tools = sorted({t for kw, t in self._KEYWORD_TOOLS.items() if kw in lowered}) or ["weather_tool"]
-        return {"tasks": [{"tool": t, "params": {"query": user}} for t in tools]}
+
+        # task planning fallback
+        tasks = []
+        for t in tools:
+            p = {"query": user, "location": "Mandi"}
+            if t == "trip_tool":
+                p["source"] = "Mandi"
+                p["destination"] = "Manali"
+            tasks.append({"tool": t, "params": p})
+        return {"tasks": tasks}
 
     def chat_text(self, system: str, user: str) -> str:
         return (

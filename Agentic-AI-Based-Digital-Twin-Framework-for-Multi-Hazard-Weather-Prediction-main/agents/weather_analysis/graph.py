@@ -30,11 +30,54 @@ from .summary import generate_summary
 logger = get_logger(__name__)
 
 
+HP_DISTRICT_COORDINATES: Dict[str, tuple[float, float]] = {
+    "mandi": (31.5892, 76.9182),
+    "kullu": (31.9579, 77.1095),
+    "chamba": (32.5534, 76.1258),
+    "shimla": (31.1048, 77.1734),
+    "kangra": (32.0998, 76.2691),
+    "dharamshala": (32.2190, 76.3234),
+    "solan": (30.9045, 77.0967),
+    "sirmaur": (30.6083, 77.3000),
+    "sirmour": (30.6083, 77.3000),
+    "hamirpur": (31.6862, 76.5213),
+    "bilaspur": (31.3260, 76.7562),
+    "una": (31.4685, 76.2708),
+    "kinnaur": (31.6510, 78.4752),
+    "lahaul and spiti": (32.5710, 77.0320),
+    "lahaul": (32.5710, 77.0320),
+    "spiti": (32.2461, 78.0349),
+    "manali": (32.2396, 77.1887),
+}
+
+
+def geocode_district(location: str) -> tuple[float, float]:
+    """Resolve latitude and longitude for a given location or district query."""
+    loc_lower = location.lower().replace(",", " ").replace("-", " ")
+    for dist_name, coords in HP_DISTRICT_COORDINATES.items():
+        if dist_name in loc_lower:
+            return coords
+    # Default to Mandi central catchment
+    return (31.5892, 76.9182)
+
+
 def extract_and_validate(state: WeatherAnalysisState) -> WeatherAnalysisState:
-    request = state["request"]
+    request = dict(state["request"])
     location = request.get("location")
     if not location:
         raise ValueError("request.location is required")
+
+    # Geocode if latitude or longitude missing
+    if request.get("latitude") is None or request.get("longitude") is None:
+        lat, lon = geocode_district(location)
+        request["latitude"] = lat
+        request["longitude"] = lon
+        logger.info("Geocoded '%s' to lat=%.4f, lon=%.4f", location, lat, lon)
+
+    # Adjust forecast hours if timeframe indicates tomorrow or multi-day
+    date_hint = str(request.get("date", "")).lower()
+    if ("tomorrow" in location.lower() or "tomorrow" in date_hint) and request.get("forecast_hours", 24) <= 24:
+        request["forecast_hours"] = 48
 
     cache_key = weather_cache.make_key(
         location, request.get("latitude"), request.get("longitude"), request.get("forecast_hours", 24)
@@ -43,9 +86,9 @@ def extract_and_validate(state: WeatherAnalysisState) -> WeatherAnalysisState:
     if cached is not None:
         logger.info("Cache hit for %s", cache_key)
         cached_response = {**cached, "cached": True}
-        return {**state, "cache_key": cache_key, "cache_hit": True, "response": cached_response}
+        return {**state, "request": request, "cache_key": cache_key, "cache_hit": True, "response": cached_response}
 
-    return {**state, "cache_key": cache_key, "cache_hit": False}
+    return {**state, "request": request, "cache_key": cache_key, "cache_hit": False}
 
 
 def select_sources(state: WeatherAnalysisState) -> WeatherAnalysisState:

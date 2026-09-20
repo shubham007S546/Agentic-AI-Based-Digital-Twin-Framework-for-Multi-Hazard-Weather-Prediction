@@ -118,39 +118,37 @@ def prediction_tool(params: Dict[str, Any]) -> Dict[str, Any]:
         initial_state = {"request": payload, "errors": []}
         final_state = prediction_graph.invoke(initial_state)
         res = final_state.get("result", {})
-        return {
-            "status": "ok",
-            "source": "in_process_prediction_graph",
-            "hazard_type": hazard,
-            "location": location,
-            "prediction": res.get("prediction", 48.5),
-            "probability": res.get("probability", 0.76),
-            "confidence": res.get("confidence", 0.90),
-            "is_extreme_event": res.get("is_extreme_event", False),
-            "notes": res.get("notes", []),
-        }
+        if res.get("status") == "ok" and res.get("prediction") is not None:
+            return {
+                "status": "ok",
+                "source": "in_process_prediction_graph",
+                "hazard_type": hazard,
+                "location": location,
+                "prediction": res.get("prediction"),
+                "unit": res.get("unit", "mm"),
+                "probability": res.get("probability"),
+                "confidence": res.get("confidence", 0.85),
+                "is_extreme_event": res.get("is_extreme_event", False),
+                "model_name": res.get("model", {}).get("name", "ml_model"),
+                "notes": res.get("notes", []),
+            }
+        elif res.get("status") == "stub":
+            return {
+                "status": "unavailable",
+                "source": "in_process_prediction_graph",
+                "hazard_type": hazard,
+                "location": location,
+                "note": res.get("note", "Model artifact not loaded for this hazard."),
+            }
     except Exception as exc:
-        logger.debug("In-process prediction graph failed: %s, trying ModelRegistry", exc)
+        logger.debug("In-process prediction graph failed: %s", exc)
 
-    # 3. ModelRegistry direct inference
-    try:
-        from app.core.enums import HazardType
-        from app.ml.models_registry.registry import get_model_registry
-        return {
-            "status": "ok",
-            "source": "model_registry_consensus",
-            "hazard_type": hazard,
-            "location": location,
-            "prediction": 52.0 if hazard == "rainfall" else 0.72,
-            "confidence": 0.88,
-            "is_extreme_event": False,
-        }
-    except Exception as err:
-        return {
-            "status": "error",
-            "note": f"Prediction tool failed: {err}",
-            "location": location,
-        }
+    return {
+        "status": "unavailable",
+        "hazard_type": hazard,
+        "location": location,
+        "note": f"ML prediction currently unavailable for {hazard} at {location}.",
+    }
 
 
 def alert_tool(params: Dict[str, Any]) -> Dict[str, Any]:
@@ -165,7 +163,7 @@ def alert_tool(params: Dict[str, Any]) -> Dict[str, Any]:
     # 1. Try HTTP microservice
     try:
         payload = {"location": location, "hazard_types": hazards, "horizon": params.get("horizon", "24h"), "notify": False}
-        resp = requests.post(f"{base_url}/api/v1/alerts/generate", json=payload, timeout=4)
+        resp = requests.post(f"{base_url}/api/v1/alerts/generate", json=payload, timeout=2)
         if resp.ok:
             return resp.json()
     except Exception:
@@ -186,23 +184,23 @@ def alert_tool(params: Dict[str, Any]) -> Dict[str, Any]:
         }
         final_state = alert_graph.invoke(initial_state)
         alert_data = final_state.get("alert", {})
-        return {
-            "status": "ok",
-            "source": "in_process_alert_graph",
-            "alert": alert_data,
-            "severity": alert_data.get("severity", "YELLOW"),
-            "risk_score": alert_data.get("risk_score", 0.45),
-            "primary_hazard": final_state.get("risk_assessment", {}).get("primary_hazard", "rainfall"),
-        }
+        if alert_data:
+            return {
+                "status": "ok",
+                "source": "in_process_alert_graph",
+                "alert": alert_data,
+                "severity": alert_data.get("severity", "GREEN"),
+                "risk_score": alert_data.get("risk_score", 0.0),
+                "primary_hazard": final_state.get("risk_assessment", {}).get("primary_hazard", "rainfall"),
+                "actions": alert_data.get("actions", []),
+            }
     except Exception as exc:
         logger.debug("In-process alert graph failed: %s", exc)
 
     return {
-        "status": "ok",
+        "status": "unavailable",
         "location": location,
-        "severity": "YELLOW",
-        "risk_score": 0.42,
-        "summary": f"Moderate weather alert active for {location}.",
+        "note": f"Live hazard risk assessment currently unavailable for {location}.",
     }
 
 
@@ -228,7 +226,7 @@ def digital_twin_tool(params: Dict[str, Any]) -> Dict[str, Any]:
 
     # 1. Try HTTP microservice
     try:
-        resp = requests.post(f"{base_url}/api/v1/digital-twin/scenario", json=payload, timeout=4)
+        resp = requests.post(f"{base_url}/api/v1/digital-twin/scenario", json=payload, timeout=2)
         if resp.ok:
             return resp.json()
     except Exception:
@@ -239,25 +237,27 @@ def digital_twin_tool(params: Dict[str, Any]) -> Dict[str, Any]:
         from agents.digital_twin.graph import digital_twin_graph
         initial_state = {"request": payload, "errors": []}
         final_state = digital_twin_graph.invoke(initial_state)
+        twin_resp = final_state.get("response", {})
+        flood_info = twin_resp.get("flood", {}) or final_state.get("scenario_result", {}).get("flood", {})
+        ls_info = twin_resp.get("landslide", {}) or final_state.get("scenario_result", {}).get("landslide", {})
         return {
             "status": "ok",
             "source": "in_process_digital_twin_graph",
             "district": district,
+            "peak_discharge_m3s": flood_info.get("peak_discharge_m3s"),
+            "warning_threshold_exceeded": flood_info.get("warning_threshold_exceeded", False),
+            "landslide_susceptible_points": ls_info.get("points_susceptible", 0),
+            "rainfall_mm": rainfall_mm,
+            "duration_hours": duration_hours,
             "simulation": final_state.get("scenario_result", {}),
-            "flood_inundation_area_km2": 4.2,
-            "landslide_susceptible_points": 7,
-            "soil_saturation_index": 0.86,
         }
     except Exception as exc:
         logger.debug("In-process digital twin failed: %s", exc)
 
     return {
-        "status": "ok",
+        "status": "unavailable",
         "district": district,
-        "flood_risk": "Moderate",
-        "landslide_susceptibility": "Elevated",
-        "soil_saturation": 0.82,
-        "simulation_mode": "physics_heuristic_twin",
+        "note": f"Digital twin hydraulic simulation unavailable for {district}.",
     }
 
 

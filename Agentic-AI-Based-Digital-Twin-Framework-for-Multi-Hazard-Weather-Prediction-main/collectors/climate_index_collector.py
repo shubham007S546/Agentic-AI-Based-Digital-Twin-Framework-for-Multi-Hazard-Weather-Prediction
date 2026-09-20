@@ -50,6 +50,12 @@ import pandas as pd
 import requests
 import yaml
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from utils.config_loader import to_long_path
+
 try:
     from tqdm import tqdm
 except ImportError:  # pragma: no cover - fallback if tqdm isn't installed
@@ -62,7 +68,7 @@ except ImportError:  # pragma: no cover - fallback if tqdm isn't installed
 # --------------------------------------------------------------------------- #
 
 COLLECTOR_NAME = "climate_index_collector"
-CONFIG_PATH = Path("config/config.yaml")
+CONFIG_PATH = PROJECT_ROOT / "config" / "config.yaml"
 
 # Official public source endpoints. These are stable, well-known government
 # data products and do not require API keys. Used as a fallback default when
@@ -179,13 +185,11 @@ def load_config(config_path: Path = CONFIG_PATH) -> ClimateIndexConfig:
         )
 
     paths_cfg = raw_cfg.get("paths", {}) or {}
-    digital_twin_root = Path(
-        (paths_cfg.get("root", {}) or {}).get("digital_twin", "digital_twin")
-    )
+    dt_root_rel = (paths_cfg.get("root", {}) or {}).get("digital_twin", "digital_twin")
+    digital_twin_root = PROJECT_ROOT / dt_root_rel
     climate_indices_cfg = paths_cfg.get("climate_indices", {}) or {}
-    base_dir = Path(
-        climate_indices_cfg.get("root", digital_twin_root / "climate_indices")
-    )
+    ci_root_rel = climate_indices_cfg.get("root", "digital_twin/climate_indices")
+    base_dir = PROJECT_ROOT / ci_root_rel
 
     # digital_twin_sources.climate_indices.indices is a dict keyed by lowercase
     # index name (enso/iod/co2), each with its own source_url/index_name.
@@ -342,7 +346,7 @@ def download_raw_file(
         _fetch, cfg.max_retries, cfg.backoff_factor, logger, description=f"download {url}"
     )
 
-    with open(dest_path, "wb") as fh:
+    with open(to_long_path(dest_path), "wb") as fh:
         fh.write(content)
 
     logger.info("Downloaded %s (%d bytes) -> %s", url, len(content), dest_path)
@@ -665,7 +669,7 @@ def write_metadata(metadata: Dict[str, Any], index_dir: Path) -> Path:
     metadata_with_history = dict(metadata)
     metadata_with_history["history"] = history[-9:]  # keep last 9 + current = 10 runs
 
-    with open(metadata_path, "w", encoding="utf-8") as fh:
+    with open(to_long_path(metadata_path), "w", encoding="utf-8") as fh:
         json.dump(metadata_with_history, fh, indent=2, default=str)
     return metadata_path
 
@@ -716,7 +720,7 @@ def collect_index(index_name: str, cfg: ClimateIndexConfig) -> bool:
             "Filtered to %d records within %d-%d", len(cleaned_df), cfg.start_year, cfg.end_year
         )
 
-        cleaned_df.to_csv(cleaned_path, index=False)
+        cleaned_df.to_csv(to_long_path(cleaned_path), index=False)
         logger.info("Wrote cleaned CSV -> %s", cleaned_path)
 
         metadata = build_metadata(

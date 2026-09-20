@@ -45,6 +45,7 @@ def understand_intent(state: OrchestratorState) -> OrchestratorState:
         '{"intent": "<short intent label>", "entities": {"location": "...", "source": "...", "destination": "...", "timeframe": "...", "hazard_type": "..."}, '
         '"requires_tools": ["<tool_name>", ...]}. '
         "If the user asks about traveling, routes, costs, or going from A to B, include trip_tool, weather_tool, and alert_tool.\n"
+        "If the user asks about flood risk, landslide risk, or multi-hazards, include alert_tool, digital_twin_tool, and weather_tool so hydrology and live risk are assessed together.\n"
         "Available tools:\n" + _AVAILABLE_TOOLS_DESCRIPTION
     )
     user = f"User context: {state.get('user_context', {})}\nUser query: {state['user_query']}"

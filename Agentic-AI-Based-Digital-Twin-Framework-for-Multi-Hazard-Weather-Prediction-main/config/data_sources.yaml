@@ -1,0 +1,376 @@
+# =============================================================================
+# DATA SOURCE REGISTRY — HIMACHAL PRADESH ENVIRONMENTAL INTELLIGENCE
+# Grounded strictly in real environmental data sources with explicit provenance,
+# licensing, endpoints, update frequencies, and authentication requirements.
+# =============================================================================
+
+sources:
+  openmeteo:
+    source_id: "openmeteo"
+    name: "Open-Meteo Weather Archive & Forecast API"
+    provider: "Open-Meteo GmbH / ECMWF ERA5 & GFS"
+    official_url: "https://open-meteo.com"
+    dataset_name: "ERA5 Reanalysis Archive & High-Resolution Numerical Weather Prediction"
+    variables:
+      - "temperature_2m"
+      - "relative_humidity_2m"
+      - "dew_point_2m"
+      - "precipitation"
+      - "rain"
+      - "snowfall"
+      - "surface_pressure"
+      - "cloud_cover"
+      - "wind_speed_10m"
+      - "wind_direction_10m"
+      - "wind_gusts_10m"
+      - "weather_code"
+    spatial_resolution: "0.1° (~11 km) to 0.25° (~28 km)"
+    temporal_resolution: "Hourly"
+    coverage_start: "1940-01-01"
+    coverage_end: "Present + 16-day forecast"
+    authentication_required: false
+    api_required: true
+    api_endpoint: "https://archive-api.open-meteo.com/v1/archive"
+    forecast_endpoint: "https://api.open-meteo.com/v1/forecast"
+    rate_limit: "10,000 requests/day, non-commercial open tier"
+    license: "CC BY 4.0 (attribution required)"
+    update_frequency: "Hourly"
+    collector: "collectors.openmeteo_collector"
+    output_directory: "datasets/source_5_openmeteo"
+    validation_method: "schema_range_continuity_check"
+    status: "AVAILABLE"
+
+  imd:
+    source_id: "imd"
+    name: "India Meteorological Department Gridded High-Resolution Rainfall"
+    provider: "IMD National Climate Centre, Pune"
+    official_url: "https://cdsp.imdpune.gov.in"
+    dataset_name: "IMD 0.25° × 0.25° Daily Gridded Rainfall"
+    variables:
+      - "rain"
+      - "tmin"
+      - "tmax"
+    spatial_resolution: "0.25° × 0.25° (~28 km)"
+    temporal_resolution: "Daily"
+    coverage_start: "1901-01-01"
+    coverage_end: "Near real-time"
+    authentication_required: false
+    api_required: false
+    api_endpoint: "https://cdsp.imdpune.gov.in (via imdlib binary .grd)"
+    rate_limit: "Sequential download per year"
+    license: "Government of India National Data Sharing and Accessibility Policy (NDSAP)"
+    update_frequency: "Daily"
+    collector: "collectors.imd_collector"
+    output_directory: "datasets/source_1_imd"
+    validation_method: "imdlib_grd_bounds_check"
+    status: "AVAILABLE"
+
+  nasa_gpm:
+    source_id: "nasa_gpm"
+    name: "NASA Global Precipitation Measurement (GPM) IMERG"
+    provider: "NASA GES DISC"
+    official_url: "https://gpm.nasa.gov"
+    dataset_name: "GPM IMERG Late Precipitation L3 Half-Hourly 0.1° (GPM_3IMERGHHL V07)"
+    variables:
+      - "precipitation"
+      - "precipitationQualityIndex"
+    spatial_resolution: "0.1° × 0.1° (~10 km)"
+    temporal_resolution: "Half-Hourly (30 min)"
+    coverage_start: "2000-06-01"
+    coverage_end: "Present (~4 hours latency for Late Run)"
+    authentication_required: true
+    api_required: true
+    api_endpoint: "https://gpm1.gesdisc.eosdis.nasa.gov/data/GPM_L3/GPM_3IMERGHHL.07"
+    rate_limit: "NASA Earthdata bearer authentication"
+    license: "NASA Open Data Policy (Free & Open)"
+    update_frequency: "Half-Hourly"
+    collector: "collectors.nasa_collector"
+    output_directory: "datasets/source_2_nasa_gpm"
+    validation_method: "hdf5_grid_quality_filter"
+    status: "AUTH_REQUIRED"
+    env_vars:
+      - "NASA_EARTHDATA_USERNAME"
+      - "NASA_EARTHDATA_PASSWORD"
+      - "NASA_EARTHDATA_TOKEN"
+
+  datagov:
+    source_id: "datagov"
+    name: "Open Government Data (OGD) Platform India"
+    provider: "National Informatics Centre (NIC) / NRSC / ISRO"
+    official_url: "https://data.gov.in"
+    dataset_name: "Daily District Rainfall NRSC VIC Model"
+    variables:
+      - "rainfall"
+      - "runoff"
+    spatial_resolution: "District / Basin"
+    temporal_resolution: "Daily"
+    coverage_start: "2015-01-01"
+    coverage_end: "2023-12-31"
+    authentication_required: true
+    api_required: true
+    api_endpoint: "https://api.data.gov.in/resource/6c05cd1b-ed59-40c2-bc31-e314f39c6971"
+    rate_limit: "10,000 requests/day per API key"
+    license: "Government Open Data License - India (GODL)"
+    update_frequency: "Daily / Periodic"
+    collector: "collectors.datagov_collector"
+    output_directory: "datasets/source_3_datagov"
+    validation_method: "json_records_field_verification"
+    status: "AUTH_REQUIRED"
+    env_vars:
+      - "DATAGOV_API_KEY"
+
+  era5:
+    source_id: "era5"
+    name: "Copernicus ERA5 Atmospheric Reanalysis"
+    provider: "European Centre for Medium-Range Weather Forecasts (ECMWF) / Copernicus CDS"
+    official_url: "https://cds.climate.copernicus.eu"
+    dataset_name: "ERA5 hourly data on single levels from 1940 to present"
+    variables:
+      - "10m_u_component_of_wind"
+      - "10m_v_component_of_wind"
+      - "2m_dewpoint_temperature"
+      - "2m_temperature"
+      - "mean_sea_level_pressure"
+      - "surface_pressure"
+      - "total_precipitation"
+      - "total_cloud_cover"
+      - "convective_available_potential_energy"
+    spatial_resolution: "0.25° × 0.25° (~31 km)"
+    temporal_resolution: "Hourly"
+    coverage_start: "1940-01-01"
+    coverage_end: "5 days before real-time"
+    authentication_required: true
+    api_required: true
+    api_endpoint: "https://cds.climate.copernicus.eu/api (cdsapi)"
+    rate_limit: "Queue-based request slots"
+    license: "Copernicus Open Access License"
+    update_frequency: "Daily archive update"
+    collector: "collectors.era5_collector"
+    output_directory: "datasets/source_4_era5"
+    validation_method: "netcdf_cf_compliant_checks"
+    status: "AUTH_REQUIRED"
+    env_vars:
+      - "CDS_API_KEY"
+
+  era5_land:
+    source_id: "era5_land"
+    name: "Copernicus ERA5-Land Surface Reanalysis"
+    provider: "ECMWF / Copernicus CDS"
+    official_url: "https://cds.climate.copernicus.eu"
+    dataset_name: "ERA5-Land hourly data from 1950 to present"
+    variables:
+      - "volumetric_soil_water_layer_1"
+      - "volumetric_soil_water_layer_2"
+      - "soil_temperature_level_1"
+      - "skin_temperature"
+      - "total_precipitation"
+      - "runoff"
+      - "snow_depth_water_equivalent"
+    spatial_resolution: "0.1° × 0.1° (~9 km)"
+    temporal_resolution: "Hourly"
+    coverage_start: "1950-01-01"
+    coverage_end: "2-3 months latency"
+    authentication_required: true
+    api_required: true
+    api_endpoint: "https://cds.climate.copernicus.eu/api (cdsapi)"
+    rate_limit: "Queue-based"
+    license: "Copernicus Open Access License"
+    update_frequency: "Monthly release"
+    collector: "collectors.era5_land_collector"
+    output_directory: "digital_twin/era5_land"
+    validation_method: "netcdf_soil_moisture_physical_bounds"
+    status: "AUTH_REQUIRED"
+    env_vars:
+      - "CDS_API_KEY"
+
+  climate_indices:
+    source_id: "climate_indices"
+    name: "Global Macro-Climate Teleconnections (ENSO, IOD, CO2)"
+    provider: "NOAA Climate Prediction Center (CPC) & NOAA Global Monitoring Lab"
+    official_url: "https://www.cpc.ncep.noaa.gov"
+    dataset_name: "Oceanic Niño Index (ONI), Dipole Mode Index (DMI), Mauna Loa CO2"
+    variables:
+      - "oni"
+      - "dmi"
+      - "co2_ppm"
+    spatial_resolution: "Global / Regional index"
+    temporal_resolution: "Monthly"
+    coverage_start: "1950-01-01"
+    coverage_end: "Present"
+    authentication_required: false
+    api_required: false
+    api_endpoint: "https://www.cpc.ncep.noaa.gov/data/indices/oni.ascii.txt"
+    rate_limit: "Standard HTTP GET"
+    license: "US Public Domain"
+    update_frequency: "Monthly"
+    collector: "collectors.climate_index_collector"
+    output_directory: "digital_twin/climate_indices"
+    validation_method: "ascii_table_numeric_range"
+    status: "AVAILABLE"
+
+  infrastructure_osm:
+    source_id: "infrastructure_osm"
+    name: "OpenStreetMap Infrastructure Overpass Telemetry"
+    provider: "OpenStreetMap Contributors"
+    official_url: "https://www.openstreetmap.org"
+    dataset_name: "Highways, Bridges, Waterways, Health & Educational Facilities in HP"
+    variables:
+      - "roads"
+      - "bridges"
+      - "waterways"
+      - "hospitals"
+      - "schools"
+    spatial_resolution: "Sub-meter vector GeoJSON"
+    temporal_resolution: "Static / Periodic refresh"
+    coverage_start: "Historical OSM changesets"
+    coverage_end: "Live"
+    authentication_required: false
+    api_required: true
+    api_endpoint: "https://overpass-api.de/api/interpreter"
+    rate_limit: "Overpass QL rate limits: 2 queries / minute recommended"
+    license: "Open Database License (ODbL)"
+    update_frequency: "Periodic / On-demand"
+    collector: "collectors.infrastructure_collector"
+    output_directory: "digital_twin/infrastructure"
+    validation_method: "geojson_feature_geometry_validation"
+    status: "AVAILABLE"
+
+  wris:
+    source_id: "wris"
+    name: "India Water Resources Information System (India-WRIS)"
+    provider: "Central Water Commission (CWC) / Ministry of Jal Shakti"
+    official_url: "https://indiawris.gov.in/wris"
+    dataset_name: "River Discharge, Reservoir Levels & Telemetry Gauges (Beas, Sutlej, Ravi)"
+    variables:
+      - "river_discharge"
+      - "water_level"
+      - "danger_level"
+      - "reservoir_storage"
+    spatial_resolution: "Gauge stations"
+    temporal_resolution: "Daily"
+    coverage_start: "2010-01-01"
+    coverage_end: "Present"
+    authentication_required: true
+    api_required: true
+    api_endpoint: "https://indiawris.gov.in/wris/api"
+    rate_limit: "Ministry credentials required"
+    license: "CWC Data Dissemination Policy"
+    update_frequency: "Daily"
+    collector: "collectors.wris_collector"
+    output_directory: "digital_twin/hydrology/WRIS"
+    validation_method: "gauge_discharge_bounds"
+    status: "AUTH_REQUIRED"
+    env_vars:
+      - "WRIS_API_KEY"
+
+  modis:
+    source_id: "modis"
+    name: "NASA MODIS Terra/Aqua Vegetation Indices (MOD13Q1)"
+    provider: "NASA LP DAAC / USGS EROS"
+    official_url: "https://lpdaac.usgs.gov/products/mod13q1v061/"
+    dataset_name: "MODIS/Terra Vegetation Indices 16-Day L3 Global 250m SIN Grid V061"
+    variables:
+      - "NDVI"
+      - "EVI"
+      - "pixel_reliability"
+    spatial_resolution: "250 meters"
+    temporal_resolution: "16-Day composite"
+    coverage_start: "2000-02-18"
+    coverage_end: "Present"
+    authentication_required: true
+    api_required: true
+    api_endpoint: "https://appeears.earthdatacloud.nasa.gov/api/"
+    rate_limit: "AppEEARS async task submission queue"
+    license: "NASA Open Data Policy"
+    update_frequency: "16-Day"
+    collector: "collectors.modis_collector"
+    output_directory: "digital_twin/vegetation/MODIS"
+    validation_method: "geotiff_raster_ndvi_scaling"
+    status: "AUTH_REQUIRED"
+    env_vars:
+      - "NASA_EARTHDATA_USERNAME"
+      - "NASA_EARTHDATA_PASSWORD"
+      - "NASA_EARTHDATA_TOKEN"
+
+  hpsdma:
+    source_id: "hpsdma"
+    name: "Himachal Pradesh State Disaster Management Authority Incident Log"
+    provider: "HPSDMA / Department of Revenue, Disaster Management Cell, Shimla"
+    official_url: "https://hpsdma.nic.in"
+    dataset_name: "Official Disaster Incident Registers (Cloudburst, Landslide, Flash Flood, Loss of Life)"
+    variables:
+      - "disaster_type"
+      - "incident_date"
+      - "district"
+      - "location"
+      - "casualties"
+      - "infrastructure_loss_inr"
+    spatial_resolution: "Village / Tehsil / District"
+    temporal_resolution: "Event-driven"
+    coverage_start: "2010-01-01"
+    coverage_end: "Present"
+    authentication_required: false
+    api_required: false
+    api_endpoint: "https://hpsdma.nic.in (web incident bulletin parser)"
+    rate_limit: "Polite scrape with 2s delay"
+    license: "Official State Portal Public Information"
+    update_frequency: "Daily / Incident-driven"
+    collector: "collectors.hpsdma_collector"
+    output_directory: "digital_twin/disaster_history/HPSDMA"
+    validation_method: "incident_record_sanitization"
+    status: "AVAILABLE"
+
+  census:
+    source_id: "census"
+    name: "Census of India District & Village Demographics"
+    provider: "Office of the Registrar General & Census Commissioner, India"
+    official_url: "https://censusindia.gov.in"
+    dataset_name: "Primary Census Abstract (PCA) 2011 for Himachal Pradesh"
+    variables:
+      - "total_population"
+      - "male_population"
+      - "female_population"
+      - "households"
+      - "vulnerable_population"
+      - "elevation_zone"
+    spatial_resolution: "Village & District boundary"
+    temporal_resolution: "Decadal"
+    coverage_start: "2011-01-01"
+    coverage_end: "2021 (projected)"
+    authentication_required: false
+    api_required: false
+    api_endpoint: "https://api.data.gov.in or static demographic table"
+    rate_limit: "N/A"
+    license: "Government Open Data License - India"
+    update_frequency: "Decadal"
+    collector: "collectors.census_collector"
+    output_directory: "digital_twin/population/Census"
+    validation_method: "census_pca_total_reconciliation"
+    status: "AVAILABLE"
+
+  reliefweb:
+    source_id: "reliefweb"
+    name: "ReliefWeb Disaster Reports"
+    provider: "United Nations Office for the Coordination of Humanitarian Affairs (OCHA)"
+    official_url: "https://reliefweb.int"
+    dataset_name: "Humanitarian Disaster Situation Reports for India & Western Himalayas"
+    variables:
+      - "disaster_name"
+      - "glide_number"
+      - "status"
+      - "headline"
+      - "primary_country"
+    spatial_resolution: "Country / State level"
+    temporal_resolution: "Event-driven"
+    coverage_start: "1981-01-01"
+    coverage_end: "Present"
+    authentication_required: false
+    api_required: true
+    api_endpoint: "https://api.reliefweb.int/v1/disasters"
+    rate_limit: "Requires appname header param"
+    license: "CC BY 4.0"
+    update_frequency: "Event-driven"
+    collector: "collectors.reliefweb_collector"
+    output_directory: "digital_twin/disaster_history/ReliefWeb"
+    validation_method: "ocha_disaster_schema_validation"
+    status: "AVAILABLE"

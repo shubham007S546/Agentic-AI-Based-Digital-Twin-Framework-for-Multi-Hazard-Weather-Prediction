@@ -111,41 +111,43 @@ class SourceLoader:
 
     # ── Open-Meteo ────────────────────────────────────────────────────────
 
-    def load_openmeteo(self) -> Optional[pd.DataFrame]:
+    def load_openmeteo(self, district: str = "mandi") -> Optional[pd.DataFrame]:
         """Load Open-Meteo cleaned parquet or CSV — already hourly UTC."""
         src_dir = self._resolve_source_dir("openmeteo")
         if src_dir is None:
             return None
         clean_dir = src_dir / "cleaned"
 
-        # Try parquet first (faster), then CSV
-        parquet = clean_dir / "openmeteo_mandi_cleaned.parquet"
-        csv_    = clean_dir / "openmeteo_mandi_cleaned.csv"
+        parquet = clean_dir / f"openmeteo_{district}_cleaned.parquet"
+        csv_    = clean_dir / f"openmeteo_{district}_cleaned.csv"
 
         if parquet.exists():
-            self._logger.info(f"  Open-Meteo: loading {parquet.name}")
+            self._logger.info(f"  Open-Meteo [{district}]: loading {parquet.name}")
             df = pd.read_parquet(parquet)
         elif csv_.exists():
-            self._logger.info(f"  Open-Meteo: loading {csv_.name}")
+            self._logger.info(f"  Open-Meteo [{district}]: loading {csv_.name}")
             df = pd.read_csv(csv_, parse_dates=["datetime"])
         else:
-            # Try any CSV in cleaned/
-            csvs = sorted(clean_dir.glob("*.csv"))
-            if not csvs:
-                self._logger.warning("  Open-Meteo: no cleaned files found.")
-                return None
-            df = pd.concat([pd.read_csv(f) for f in csvs], ignore_index=True)
-            self._logger.info(f"  Open-Meteo: loaded {len(csvs)} CSV(s)")
+            self._logger.warning(f"  Open-Meteo: no cleaned files found for {district}.")
+            return None
+
+        district_val = district
+        lat_val = df["latitude"].iloc[0] if "latitude" in df.columns else None
+        lon_val = df["longitude"].iloc[0] if "longitude" in df.columns else None
 
         df = self._normalise_datetime(df, ["datetime", "date", "time"])
         if df is None:
             return None
 
-        # Already hourly — just ensure no sub-hourly rows
         df = df.resample("h").mean(numeric_only=True)
         df.columns = [f"openmeteo_{c}" for c in df.columns]
+        df["district"] = district_val
+        if lat_val is not None:
+            df["latitude"] = lat_val
+        if lon_val is not None:
+            df["longitude"] = lon_val
         self._logger.info(
-            f"  Open-Meteo: {len(df):,} hourly rows, "
+            f"  Open-Meteo [{district}]: {len(df):,} hourly rows, "
             f"{len(df.columns)} columns"
         )
         return df
@@ -253,7 +255,7 @@ class SourceLoader:
 
     # ── IMD gridded ───────────────────────────────────────────────────────
 
-    def load_imd(self) -> Optional[pd.DataFrame]:
+    def load_imd(self, district: str = "mandi") -> Optional[pd.DataFrame]:
         """
         Load IMD daily gridded cleaned CSVs.
         Forward-fills daily values to hourly (constant within each day).
@@ -262,20 +264,20 @@ class SourceLoader:
         if src_dir is None:
             return None
         clean_dir = src_dir / "cleaned"
-        csvs      = sorted(clean_dir.rglob("imd_mandi_*_cleaned.csv"))
+        csvs      = sorted(clean_dir.rglob(f"imd_{district}_*_cleaned.csv"))
 
         if not csvs:
-            self._logger.warning("  IMD: no cleaned CSVs found.")
+            self._logger.warning(f"  IMD [{district}]: no cleaned CSVs found.")
             return None
 
-        self._logger.info(f"  IMD: loading {len(csvs)} yearly CSV(s)...")
+        self._logger.info(f"  IMD [{district}]: loading {len(csvs)} yearly CSV(s)...")
         dfs = []
         for f in csvs:
             try:
                 dfs.append(pd.read_csv(f))
             except Exception as exc:
                 self._logger.warning(
-                    f"  IMD: failed to read {f.name}: {exc}"
+                    f"  IMD [{district}]: failed to read {f.name}: {exc}"
                 )
 
         if not dfs:
@@ -286,17 +288,24 @@ class SourceLoader:
         if df is None:
             return None
 
-        # Average over bbox grid points
-        num_cols = [
-            c for c in df.select_dtypes(include="number").columns
-            if c not in ("latitude", "longitude")
-        ]
-        # Resample to daily mean, then upsample to hourly and forward-fill
-        df_daily = df[num_cols].resample("D").mean()
-        df_hourly = df_daily.resample("h").ffill()
-        df_hourly.columns = [f"imd_{c}" for c in df_hourly.columns]
+        # Spatial average over bbox grid points
+        r_cols = [c for c in df.columns if "rain" in c.lower()]
+        r_col = r_cols[0] if r_cols else None
+        if r_col:
+            df_daily = df.groupby(df.index.date)[r_col].mean()
+            df_daily.index = pd.to_datetime(df_daily.index, utc=True)
+            df_hourly = df_daily.resample("h").ffill().to_frame(name="imd_rainfall_mm")
+        else:
+            num_cols = [
+                c for c in df.select_dtypes(include="number").columns
+                if c not in ("latitude", "longitude")
+            ]
+            df_daily = df[num_cols].resample("D").mean()
+            df_hourly = df_daily.resample("h").ffill()
+            df_hourly.columns = [f"imd_{c}" for c in df_hourly.columns]
+
         self._logger.info(
-            f"  IMD: {len(df_hourly):,} hourly rows (forward-filled from daily)"
+            f"  IMD [{district}]: {len(df_hourly):,} hourly rows (forward-filled from daily)"
         )
         return df_hourly
 
@@ -671,13 +680,14 @@ class MergedDatasetValidator:
         # Shape
         report["rows"]    = len(df)
         report["columns"] = len(df.columns)
-        self._logger.info(f"  Shape: {len(df):,} rows × {len(df.columns)} cols")
+        self._logger.info(f"  Shape: {len(df):,} rows x {len(df.columns)} cols")
 
         # Date range
-        report["date_min"] = str(df.index.min())
-        report["date_max"] = str(df.index.max())
+        dt_series = df["datetime"] if "datetime" in df.columns else df.index
+        report["date_min"] = str(dt_series.min())
+        report["date_max"] = str(dt_series.max())
         self._logger.info(
-            f"  Date range: {report['date_min']} → {report['date_max']}"
+            f"  Date range: {report['date_min']} -> {report['date_max']}"
         )
 
         # Missing values
@@ -692,17 +702,20 @@ class MergedDatasetValidator:
                 )
         report["missing_values"] = missing
 
-        # Duplicate timestamps
-        dupes = int(df.index.duplicated().sum())
+        # Duplicate timestamps per district
+        if "district" in df.columns:
+            dupes = int(df.duplicated(subset=["district", "datetime"] if "datetime" in df.columns else ["district"]).sum())
+        else:
+            dupes = int(df.index.duplicated().sum())
         report["duplicate_timestamps"] = dupes
         if dupes > 0:
             self._logger.warning(f"  Duplicate timestamps: {dupes}")
         else:
-            self._logger.info("  Duplicate timestamps: 0 ✓")
+            self._logger.info("  Duplicate timestamps: 0 [PASS]")
 
         # Range violations
         violations: dict = {}
-        for col in df.columns:
+        for col in df.select_dtypes(include="number").columns:
             col_lower = col.lower()
             for key, (lo, hi) in self.RANGE_CHECKS.items():
                 if key in col_lower:
@@ -719,7 +732,7 @@ class MergedDatasetValidator:
         report["range_violations"] = violations
 
         if not violations:
-            self._logger.info("  Range checks: all passed ✓")
+            self._logger.info("  Range checks: all passed [PASS]")
 
         return report
 
@@ -730,14 +743,15 @@ class MergedDatasetValidator:
 
 class DatasetMerger:
     """
-    Orchestrates the full merge pipeline.
+    Orchestrates the full multi-district merge pipeline.
 
     Pipeline
     ────────
-    1. Load all 5 sources (hourly-resampled DataFrames)
-    2. Outer join on datetime index
-    3. Validate
-    4. Save parquet + CSV + report JSON
+    1. Load Open-Meteo, IMD gridded rainfall, and Climate Indices for each active district
+    2. Thermodynamically derive CAPE and Lifted Index
+    3. Generate targets (imd_rainfall_mm, rain_intensity_class, cloudburst_flag, landslide_risk)
+    4. Harmonize features into DATASET_SCHEME.md specification
+    5. Save per-district and unified master datasets (parquet + CSV + merge_report.json)
     """
 
     def __init__(self) -> None:
@@ -749,114 +763,154 @@ class DatasetMerger:
         self._loader   = SourceLoader(cfg=self._cfg, logger=self._logger)
         self._validator= MergedDatasetValidator(logger=self._logger)
 
+    def _merge_single_district(
+        self, district: str
+    ) -> tuple[Optional[pd.DataFrame], dict]:
+        """Merge all available datasets for one district and standardize features/targets."""
+        sources = {
+            "openmeteo":       self._loader.load_openmeteo(district=district),
+            "imd":             self._loader.load_imd(district=district),
+            "climate_indices": self._loader.load_climate_indices(),
+        }
+
+        om = sources["openmeteo"]
+        if om is None or om.empty:
+            self._logger.error(f"  Open-Meteo missing for {district}. Cannot merge.")
+            return None, sources
+
+        # Trim window to observation range (2022-01-01 to 2024-09-30)
+        start_trim = pd.Timestamp("2022-01-01 00:00:00", tz="UTC")
+        end_trim   = pd.Timestamp("2024-09-30 23:00:00", tz="UTC")
+        df = om.loc[start_trim:end_trim].copy()
+
+        # Align IMD gridded daily rainfall
+        imd = sources["imd"]
+        if imd is not None and not imd.empty:
+            df["imd_rainfall_mm"] = (
+                imd["imd_rainfall_mm"].reindex(df.index, method="ffill").fillna(0.0)
+            )
+        else:
+            df["imd_rainfall_mm"] = 0.0
+
+        # Align Climate Indices
+        ci = sources["climate_indices"]
+        if ci is not None and not ci.empty:
+            for c in ci.columns:
+                df[c] = ci[c].reindex(df.index, method="ffill")
+
+        # Impute thermodynamic CAPE and Lifted Index if missing
+        T = df["openmeteo_temperature_2m"]
+        Td = df.get("openmeteo_dew_point_2m", df.get("openmeteo_dewpoint_2m", T - 2.0))
+        RH = df.get("openmeteo_relative_humidity_2m", df.get("openmeteo_relative_humidity", 50.0))
+        P = df.get("openmeteo_surface_pressure", 900.0)
+        theta = (T + 273.15) * (1000.0 / P) ** 0.286
+        e_s = 6.112 * np.exp((17.67 * T) / (T + 243.5))
+        e = e_s * (RH / 100.0)
+        q = (0.622 * e) / (P - 0.378 * e).clip(lower=1e-5)
+        T_k = T + 273.15
+        theta_e = theta * np.exp((3036.0 / T_k - 1.78) * q * (1 + 0.448 * q))
+        convective_potential = (theta_e - 300.0).clip(lower=0)
+        instability_factor = (RH / 100.0) * (T > 10.0).astype(float)
+        cape_calc = (convective_potential**1.35 * instability_factor * 12.0).clip(0, 4500)
+        li_calc = (6.0 - (cape_calc / 400.0)).clip(-10.0, 15.0)
+
+        if "openmeteo_cape" not in df.columns or df["openmeteo_cape"].isna().all():
+            df["cape"] = cape_calc
+            df["lifted_index"] = li_calc
+        else:
+            df["cape"] = df["openmeteo_cape"].fillna(cape_calc)
+            df["lifted_index"] = df["openmeteo_lifted_index"].fillna(li_calc)
+
+        # Standardize expected feature columns
+        df["dewpoint_2m"] = Td
+        df["relative_humidity"] = RH
+        df["temperature_2m"] = T
+        df["surface_pressure"] = P
+        df["cloud_cover"] = df.get("openmeteo_cloud_cover", 0.0)
+        df["weather_code"] = df.get("openmeteo_weather_code", 0)
+        df["wind_speed_10m"] = df.get("openmeteo_wind_speed_10m", 0.0)
+        df["wind_direction_10m"] = df.get("openmeteo_wind_direction_10m", 0.0)
+        df["wind_gusts_10m"] = df.get("openmeteo_wind_gusts_10m", 0.0)
+        df["precipitation_openmeteo"] = df.get("openmeteo_precipitation", 0.0)
+        df["rain_openmeteo"] = df.get("openmeteo_rain", 0.0)
+        df["snowfall"] = df.get("openmeteo_snowfall", 0.0)
+        df["soil_temperature_0_to_7cm"] = df.get("openmeteo_soil_temperature_0_to_7cm", 15.0)
+        df["soil_moisture_0_to_7cm"] = df.get("openmeteo_soil_moisture_0_to_7cm", 0.2)
+
+        # Target variables
+        precip = df["precipitation_openmeteo"].fillna(0)
+        rolling_3h = precip.rolling(3, min_periods=1).sum()
+        rolling_24h = precip.rolling(24, min_periods=1).sum()
+
+        bins = [-1e-5, 0.1, 2.5, 7.5, 35.5, float("inf")]
+        labels = [0, 1, 2, 3, 4]
+        df["rain_intensity_class"] = pd.cut(
+            precip, bins=bins, labels=labels, right=False
+        ).astype(int)
+        df["cloudburst_flag"] = (rolling_3h >= 100.0).astype(int)
+        soil_m = df["soil_moisture_0_to_7cm"].fillna(0)
+        df["landslide_risk"] = (
+            (rolling_24h >= 50.0)
+            | ((rolling_24h >= 25.0) & (soil_m >= 0.35))
+            | (df["cloudburst_flag"] == 1)
+        ).astype(int)
+
+        df["district"] = district
+        df["datetime"] = df.index
+
+        return df, sources
+
     def run(self) -> Path:
-        """Execute the full merge pipeline. Returns path to saved parquet."""
+        """Execute the full merge pipeline across active districts."""
         self._logger.info("=" * 70)
-        self._logger.info("Dataset Merger — START")
+        self._logger.info("Dataset Merger - START")
         self._logger.info(f"Output dir: {MERGED_DIR.resolve()}")
         self._logger.info("=" * 70)
 
-        # ── Step 1: Load all sources ─────────────────────────────────────
-        self._logger.info("Step 1: Loading all sources...")
-        sources: dict[str, Optional[pd.DataFrame]] = {
-            "openmeteo":       self._loader.load_openmeteo(),
-            "era5":            self._loader.load_era5(),
-            "gpm":             self._loader.load_nasa_gpm(),
-            "imd":             self._loader.load_imd(),
-            "datagov":         self._loader.load_datagov(),
-            "era5_land":       self._loader.load_era5_land(),
-            "climate_indices": self._loader.load_climate_indices(),
-            "modis_evi":       self._loader.load_modis_evi(),
-        }
+        districts = self._cfg.get("active_districts", ["mandi", "kullu", "chamba"])
+        all_district_dfs = []
+        sources_summary = {}
 
-        available = {k: v for k, v in sources.items() if v is not None}
-        if not available:
-            self._logger.error("No sources loaded. Aborting.")
-            raise RuntimeError("DatasetMerger: all sources failed to load.")
+        for dist in districts:
+            self._logger.info(f"--- Merging district: {dist.upper()} ---")
+            df_dist, sources = self._merge_single_district(dist)
+            if df_dist is not None and not df_dist.empty:
+                all_district_dfs.append(df_dist)
+                dist_parquet = MERGED_DIR / f"merged_dataset_{dist}.parquet"
+                df_dist.to_parquet(dist_parquet, engine="pyarrow")
+                self._logger.info(
+                    f"  Saved per-district parquet: {dist_parquet.name} ({len(df_dist):,} rows)"
+                )
+                sources_summary[dist] = {
+                    k: (len(v) if v is not None else 0)
+                    for k, v in sources.items()
+                }
 
+        if not all_district_dfs:
+            raise RuntimeError("DatasetMerger: all districts failed to merge.")
+
+        master_df = pd.concat(all_district_dfs, ignore_index=True)
         self._logger.info(
-            f"  Loaded {len(available)}/8 sources: "
-            f"{list(available.keys())}"
+            f"Master merged shape: {len(master_df):,} rows x {len(master_df.columns)} columns"
         )
 
-        # ── Step 2: Merge on datetime index ──────────────────────────────
-        self._logger.info("Step 2: Merging on hourly datetime index...")
-        df_merged = self._merge_sources(available)
-        self._logger.info(
-            f"  Merged shape: {len(df_merged):,} rows × "
-            f"{len(df_merged.columns)} columns"
-        )
+        # Validate
+        report = self._validator.validate(master_df)
 
-        # ── Step 3: Validate ─────────────────────────────────────────────
-        self._logger.info("Step 3: Validating merged dataset...")
-        report = self._validator.validate(df_merged)
-
-        # ── Step 4: Save ─────────────────────────────────────────────────
-        self._logger.info("Step 4: Saving output files...")
-        parquet_path, csv_path = self._save(df_merged)
-        self._save_report(report, parquet_path, sources)
+        # Save unified master files
+        parquet_path, csv_path = self._save(master_df)
+        self._save_report(report, parquet_path, sources_summary)
 
         self._logger.info("=" * 70)
-        self._logger.info("Dataset Merger — COMPLETE")
+        self._logger.info("Dataset Merger - COMPLETE")
         self._logger.info(f"Parquet : {parquet_path}")
         self._logger.info(f"CSV     : {csv_path}")
         self._logger.info(
-            f"Rows    : {len(df_merged):,}   Columns: {len(df_merged.columns)}"
+            f"Rows    : {len(master_df):,}   Columns: {len(master_df.columns)}"
         )
         self._logger.info("=" * 70)
 
         return parquet_path
-
-    # ── Private helpers ───────────────────────────────────────────────────
-
-    def _merge_sources(
-        self, sources: dict[str, pd.DataFrame]
-    ) -> pd.DataFrame:
-        """
-        Outer join all source DataFrames on their UTC datetime index.
-
-        Strategy
-        ────────
-        Use pd.concat with axis=1 for an outer join — equivalent to a
-        full outer join on the index. Each source already has a clean
-        hourly UTC DatetimeIndex so alignment is automatic.
-        """
-        dfs = list(sources.values())
-
-        if len(dfs) == 1:
-            return dfs[0]
-
-        # Outer concat — preserves all timestamps from all sources.
-        # sort=False: indices are already individually sorted per-source;
-        # avoids the pandas FutureWarning about implicit sort behavior.
-        df = pd.concat(dfs, axis=1, join="outer", sort=False)
-
-        # Sort chronologically
-        df = df.sort_index()
-
-        # Remove any residual fully-empty rows
-        df = df.dropna(how="all")
-
-        # Trim to configured date range — removes empty rows outside overlap
-        # NOTE: fallback defaults below (2005-01-01 / 2025-12-31) match
-        # config.yaml's dates: block (project.start_year=2005,
-        # end_year=2025). Config values are always used when present;
-        # these are only a safety net if dates: is ever missing.
-        dates_cfg  = self._cfg.get("dates", {})
-        start_trim = pd.Timestamp(
-            dates_cfg.get("start_date", "2005-01-01"), tz="UTC"
-        )
-        end_trim = pd.Timestamp(
-            dates_cfg.get("end_date", "2025-12-31"), tz="UTC"
-        )
-        before = len(df)
-        df = df.loc[start_trim:end_trim]
-        self._logger.info(
-            f"  Trimmed to {start_trim.date()} → {end_trim.date()}: "
-            f"{before:,} → {len(df):,} rows"
-        )
-
-        return df
 
     def _save(
         self, df: pd.DataFrame
@@ -866,7 +920,7 @@ class DatasetMerger:
         csv_path     = MERGED_DIR / "merged_dataset.csv"
 
         df.to_parquet(parquet_path, engine="pyarrow")
-        df.to_csv(csv_path)
+        df.to_csv(csv_path, index=False)
 
         pq_mb  = parquet_path.stat().st_size / 1_048_576
         csv_mb = csv_path.stat().st_size / 1_048_576
@@ -882,7 +936,7 @@ class DatasetMerger:
         self,
         report: dict,
         parquet_path: Path,
-        sources: dict[str, Optional[pd.DataFrame]],
+        sources: dict,
     ) -> None:
         """Write merge_report.json with provenance + validation stats."""
         report_path = MERGED_DIR / "merge_report.json"
@@ -890,10 +944,7 @@ class DatasetMerger:
         full_report = {
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "output_file":  str(parquet_path.resolve()),
-            "sources_loaded": {
-                k: (len(v) if v is not None else 0)
-                for k, v in sources.items()
-            },
+            "sources_loaded": sources,
             "merged_rows":    report.get("rows", 0),
             "merged_columns": report.get("columns", 0),
             "date_min":       report.get("date_min"),
@@ -907,7 +958,7 @@ class DatasetMerger:
             },
         }
 
-        with open(report_path, "w") as fh:
+        with open(report_path, "w", encoding="utf-8") as fh:
             json.dump(full_report, fh, indent=2)
 
         self._logger.info(f"  Report saved : {report_path.name}")

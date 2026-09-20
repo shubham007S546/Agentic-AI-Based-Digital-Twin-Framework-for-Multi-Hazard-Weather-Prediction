@@ -34,27 +34,42 @@ class _InMemoryStore:
 class _RedisStore:
     def __init__(self, url: str):
         import redis
-        self._client = redis.Redis.from_url(url, decode_responses=True)
         self._fallback = _InMemoryStore()
+        self._available = False
+        try:
+            self._client = redis.Redis.from_url(
+                url, decode_responses=True, socket_connect_timeout=0.4, socket_timeout=0.4
+            )
+            self._client.ping()
+            self._available = True
+        except Exception as exc:
+            logger.info("Redis not reachable (%s); falling back to in-memory store", exc)
 
     def _key(self, session_id: str) -> str:
         return f"orchestrator:session:{session_id}:history"
 
     def get(self, session_id: str) -> List[Dict[str, str]]:
+        if not self._available:
+            return self._fallback.get(session_id)
         try:
             raw = self._client.lrange(self._key(session_id), 0, -1)
             return [json.loads(item) for item in raw]
         except Exception as exc:
             logger.debug("Redis get failed (%s), using local fallback", exc)
+            self._available = False
             return self._fallback.get(session_id)
 
     def append(self, session_id: str, turn: Dict[str, str], max_turns: int) -> None:
+        if not self._available:
+            self._fallback.append(session_id, turn, max_turns)
+            return
         try:
             key = self._key(session_id)
             self._client.rpush(key, json.dumps(turn))
             self._client.ltrim(key, -max_turns, -1)
         except Exception as exc:
             logger.debug("Redis append failed (%s), using local fallback", exc)
+            self._available = False
             self._fallback.append(session_id, turn, max_turns)
 
 

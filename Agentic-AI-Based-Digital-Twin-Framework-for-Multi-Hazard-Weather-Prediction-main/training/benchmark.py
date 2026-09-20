@@ -58,6 +58,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _ML_MODULE  = _REPO_ROOT / "machine_learning_module"
 sys.path.insert(0, str(_REPO_ROOT))
@@ -72,6 +83,15 @@ logger = get_logger(__name__, log_file="logs/benchmark.log")
 # ── Default model roster ──────────────────────────────────────────────────────
 
 ALL_MODELS = ["xgboost", "lightgbm", "lstm", "gru", "tcn", "tft"]
+
+
+def _safe_mkdir(p: Path) -> None:
+    p_abs = str(p.resolve())
+    if sys.platform == "win32" and not p_abs.startswith("\\\\?\\"):
+        import os
+        os.makedirs(f"\\\\?\\{p_abs}", exist_ok=True)
+    else:
+        p.mkdir(parents=True, exist_ok=True)
 
 
 # ── Per-model train + evaluate ────────────────────────────────────────────────
@@ -96,7 +116,7 @@ def _train_and_evaluate(
         task_type = TaskType.REGRESSION
 
     model_dir = output_dir / model_key
-    model_dir.mkdir(parents=True, exist_ok=True)
+    _safe_mkdir(model_dir)
 
     # -- Build model & config --
     try:
@@ -258,11 +278,11 @@ def main() -> None:
     models_to_run = args.models or ALL_MODELS
 
     output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    _safe_mkdir(output_dir)
     bench_dir = output_dir / "benchmark"
-    bench_dir.mkdir(parents=True, exist_ok=True)
+    _safe_mkdir(bench_dir)
     plots_dir = output_dir / "plots"
-    plots_dir.mkdir(parents=True, exist_ok=True)
+    _safe_mkdir(plots_dir)
 
     print("\n" + "=" * 70)
     print("  FULL MODEL BENCHMARK")

@@ -38,53 +38,6 @@ export interface AgentExecutionReport {
   summary_markdown: string
 }
 
-export interface TripPlanResponse {
-  agent: string
-  status: string
-  duration_seconds: number
-  result_summary: {
-    source: string
-    destination: string
-    way: string
-    distance_km: number
-    duration: string
-    cost: {
-      fuel_cost_inr: number
-      fuel_liters_estimated: number
-      toll_charges_inr: number
-      total_self_drive_inr: number
-      taxi_estimate_inr: number
-      bus_fare_inr: number
-      cost_summary_range: string
-    }
-    hazard_level: string
-  }
-  agent_report: AgentExecutionReport
-  final_answer: {
-    source: string
-    destination: string
-    way: string
-    distance_km: number
-    estimated_duration: string
-    estimated_cost: Record<string, any>
-    route_hazard_level: string
-    hazard_breakdown: Array<{
-      location: string
-      hazard_type: string
-      severity: string
-      notes: string
-    }>
-    alternative_ways: Array<{
-      way: string
-      distance_km: number
-      estimated_duration: string
-      hazard_level: string
-      notes: string
-    }>
-    travel_advisories: string[]
-  }
-}
-
 export async function getAgentHealth(): Promise<AgentHealth[]> {
   const response = await apiFetch<{ data: AgentHealth[] }>('/agents/health', {
     cache: 'no-store',
@@ -101,21 +54,6 @@ export async function getRagHealth(): Promise<RagHealth> {
 
 export async function getAgentPrompts(): Promise<Record<string, PromptSpecification>> {
   const response = await apiFetch<{ data: Record<string, PromptSpecification> }>('/agents/prompts', {
-    cache: 'no-store',
-  })
-  return response.data
-}
-
-export async function planTripRoute(payload: {
-  source: string
-  destination: string
-  travel_mode?: string
-  fuel_type?: string
-  departure_time?: string
-}): Promise<TripPlanResponse> {
-  const response = await apiFetch<{ data: TripPlanResponse }>('/agents/trip/plan', {
-    method: 'POST',
-    body: JSON.stringify(payload),
     cache: 'no-store',
   })
   return response.data

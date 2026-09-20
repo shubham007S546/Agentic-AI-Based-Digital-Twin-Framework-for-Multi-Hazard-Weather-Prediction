@@ -170,11 +170,29 @@ def load_dataset_bundle(
     if use_class_weights:
         cw_path = base / "class_weights.json"
         if cw_path.exists():
-            with open(cw_path, "r") as f:
-                raw = json.load(f)
-            # normalize keys to the dtype found in y so sklearn/xgboost/lightgbm
-            # class_weight / scale_pos_weight lookups line up correctly.
-            class_weights = {_coerce_label(k, y_train): float(v) for k, v in raw.items()}
+            try:
+                with open(cw_path, "r") as f:
+                    raw = json.load(f)
+                # If class_weights.json is organized by target_column:
+                if target_column in raw and isinstance(raw[target_column], dict):
+                    entry = raw[target_column]
+                    if "class_weight" in entry and isinstance(entry["class_weight"], dict):
+                        class_weights = {
+                            _coerce_label(k, y_train): float(v)
+                            for k, v in entry["class_weight"].items()
+                        }
+                    elif "scale_pos_weight" in entry:
+                        class_weights = {
+                            0: 1.0,
+                            1: float(entry["scale_pos_weight"]),
+                        }
+                elif all(isinstance(v, (int, float, str)) for v in raw.values()):
+                    # Flat dictionary of {label: weight}
+                    class_weights = {_coerce_label(k, y_train): float(v) for k, v in raw.items()}
+                else:
+                    class_weights = None
+            except Exception:
+                class_weights = None
 
     metadata = None
     meta_path = base / "dataset_metadata.json"

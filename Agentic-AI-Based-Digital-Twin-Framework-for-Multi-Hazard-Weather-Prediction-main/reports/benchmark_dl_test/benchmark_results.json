@@ -1,0 +1,44 @@
+{
+  "generated_at": "2026-09-17T15:39:53.731881+00:00",
+  "task_type": "regression",
+  "primary_metric": "rmse",
+  "n_models": 1,
+  "ranked_models": [
+    {
+      "rank": 1,
+      "model_name": "lstm",
+      "experiment_name": "lstm_benchmark",
+      "task_type": "regression",
+      "artifact_path": "C:\\Users\\shubh\\Downloads\\Agentic-AI-Based-Digital-Twin-Framework-for-Multi-Hazard-Weather-Prediction-main\\Agentic-AI-Based-Digital-Twin-Framework-for-Multi-Hazard-Weather-Prediction-main\\reports\\benchmark_dl_test\\benchmark\\lstm\\deep_learning\\lstm_benchmark\\model.joblib",
+      "registered_at": "2026-09-17T15:39:53.716148+00:00",
+      "rmse": 11.052418839231686,
+      "mae": 6.449405466240078,
+      "r2": -0.18473952152321682,
+      "n_samples": 19728,
+      "nse": -0.1847,
+      "kge": -0.2269,
+      "pbias": -111.7628,
+      "mape": 1046.5851,
+      "bias": 4.1869
+    }
+  ],
+  "best_model": "lstm",
+  "best_metrics": {
+    "rank": 1,
+    "model_name": "lstm",
+    "experiment_name": "lstm_benchmark",
+    "task_type": "regression",
+    "artifact_path": "C:\\Users\\shubh\\Downloads\\Agentic-AI-Based-Digital-Twin-Framework-for-Multi-Hazard-Weather-Prediction-main\\Agentic-AI-Based-Digital-Twin-Framework-for-Multi-Hazard-Weather-Prediction-main\\reports\\benchmark_dl_test\\benchmark\\lstm\\deep_learning\\lstm_benchmark\\model.joblib",
+    "registered_at": "2026-09-17T15:39:53.716148+00:00",
+    "rmse": 11.052418839231686,
+    "mae": 6.449405466240078,
+    "r2": -0.18473952152321682,
+    "n_samples": 19728,
+    "nse": -0.1847,
+    "kge": -0.2269,
+    "pbias": -111.7628,
+    "mape": 1046.5851,
+    "bias": 4.1869
+  },
+  "total_elapsed_seconds": 26.1
+}
